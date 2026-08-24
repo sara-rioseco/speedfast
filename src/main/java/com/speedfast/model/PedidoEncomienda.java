@@ -9,6 +9,12 @@ public class PedidoEncomienda extends Pedido {
     /** Tipo de servicio con el que se identifica esta subclase. */
     private static final String TIPO = "Pedido de Encomienda";
 
+    /** Minutos de gestión considerados como base. */
+    private static final int TIEMPO_BASE = 20;
+
+    /** Minutos adicionales por cada kilómetro recorrido. */
+    private static final float MINUTOS_POR_KM = 1.5f;
+
     /** Peso de la encomienda, en kilogramos. */
     private float pesoKg;
 
@@ -20,11 +26,13 @@ public class PedidoEncomienda extends Pedido {
      *
      * @param idPedido         identificador único del pedido
      * @param direccionEntrega dirección de entrega
+     * @param distanciaKm      distancia hasta la entrega, en kilómetros
      * @param pesoKg           peso de la encomienda en kilogramos
      * @param tipoEmbalaje     embalaje declarado
      */
-    public PedidoEncomienda(int idPedido, String direccionEntrega, float pesoKg, String tipoEmbalaje) {
-        super(idPedido, direccionEntrega, TIPO);
+    public PedidoEncomienda(int idPedido, String direccionEntrega, float distanciaKm,
+                            float pesoKg, String tipoEmbalaje) {
+        super(idPedido, direccionEntrega, distanciaKm, TIPO);
         this.pesoKg = pesoKg;
         this.tipoEmbalaje = tipoEmbalaje;
     }
@@ -47,6 +55,17 @@ public class PedidoEncomienda extends Pedido {
     /** @param tipoEmbalaje nuevo embalaje declarado */
     public void setTipoEmbalaje(String tipoEmbalaje) {
         this.tipoEmbalaje = tipoEmbalaje;
+    }
+
+    /**
+     * Implementación del cálculo para encomiendas:
+     * 20 minutos base más 1,5 minutos por kilómetro, redondeado a un entero.
+     *
+     * @return el tiempo estimado de entrega, en minutos
+     */
+    @Override
+    public int calcularTiempoEntrega() {
+        return Math.round(TIEMPO_BASE + MINUTOS_POR_KM * getDistanciaKm());
     }
 
     /**

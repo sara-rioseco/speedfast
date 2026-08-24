@@ -8,8 +8,9 @@ import com.speedfast.model.Repartidor;
 
 /**
  * Clase de prueba del sistema SpeedFast. Instancia un pedido de cada tipo y
- * ejecuta las tres versiones de {@code asignarRepartidor()} para evidenciar la
- * sobrescritura y la sobrecarga del método.
+ * ejecuta los métodos de la jerarquía para evidenciar el uso de la clase
+ * abstracta {@link Pedido}, el cálculo diferenciado del tiempo de entrega y la
+ * sobrecarga y sobrescritura de {@code asignarRepartidor()}.
  */
 public class Main {
 
@@ -28,26 +29,47 @@ public class Main {
         Repartidor luis = new Repartidor(3, "Luis", "Díaz", "+56 9 3333 3333",
                 "Pasaje Los Olmos 78, Ñuñoa", "Bicicleta", 8.0f, false, true, 1.2f);
 
-        // Un pedido de cada tipo, referenciados con el tipo de la clase base.
-        Pedido comida = new PedidoComida(101, "Av. Providencia 1234, Providencia",
-                "Sushi Kai", 3);
-        Pedido encomienda = new PedidoEncomienda(102, "Los Leones 456, Providencia",
-                12.5f, "Caja de cartón sellada");
-        Pedido express = new PedidoExpress(103, "Irarrázaval 789, Ñuñoa",
-                "Farmacia Central", 3.0f);
+        // Un pedido de cada tipo, referenciados con el tipo de la clase abstracta.
+        Pedido comida = new PedidoComida(101, "Av. Italia 456, Providencia",
+                4.0f, "Sushi Kai", 3);
+        Pedido encomienda = new PedidoEncomienda(102, "Av. Independencia 123, Independencia",
+                6.0f, 12.5f, "Caja de cartón sellada");
+        Pedido express = new PedidoExpress(103, "Av. Apoquindo 1500, Las Condes",
+                7.0f, "Farmacia Central", 3.0f);
 
         Pedido[] pedidos = {comida, encomienda, express};
         Repartidor[] repartidores = {juan, camila, luis};
 
-        // 1. Sobrescritura: el mismo llamado se resuelve según el tipo real del objeto.
-        imprimirTitulo("1. SOBRESCRITURA: asignarRepartidor()");
+        // 1. Clase abstracta: mostrarResumen() es común y calcularTiempoEntrega() lo aporta cada subclase.
+        imprimirTitulo("1. RESUMEN DE PEDIDOS Y TIEMPO ESTIMADO DE ENTREGA");
+        for (Pedido pedido : pedidos) {
+            pedido.mostrarResumen();
+            System.out.println();
+        }
+
+        // 2. Comparación de los tiempos calculados por cada subclase.
+        imprimirTitulo("2. COMPARACIÓN DE TIEMPOS ESTIMADOS");
+        System.out.printf("%-24s %-6s %-12s %s%n", "TIPO DE PEDIDO", "N°", "DISTANCIA", "TIEMPO ESTIMADO");
+        System.out.println("-".repeat(60));
+        for (Pedido pedido : pedidos) {
+            System.out.printf("%-24s %-6d %-12s %d minutos%n",
+                    pedido.getTipoPedido(),
+                    pedido.getIdPedido(),
+                    String.format("%.1f km", pedido.getDistanciaKm()),
+                    pedido.calcularTiempoEntrega());
+        }
+        System.out.println("-".repeat(60));
+        System.out.println();
+
+        // 3. Sobrescritura: el mismo llamado se resuelve según el tipo real del objeto.
+        imprimirTitulo("3. SOBRESCRITURA: asignarRepartidor()");
         for (Pedido pedido : pedidos) {
             System.out.println(pedido.asignarRepartidor());
             System.out.println();
         }
 
-        // 2. Sobrecarga con el nombre del repartidor.
-        imprimirTitulo("2. SOBRECARGA: asignarRepartidor(String nombreRepartidor)");
+        // 4. Sobrecarga con el nombre del repartidor.
+        imprimirTitulo("4. SOBRECARGA: asignarRepartidor(String nombreRepartidor)");
         System.out.println(comida.asignarRepartidor("Juan Pérez"));
         System.out.println();
         System.out.println(encomienda.asignarRepartidor("Camila Soto"));
@@ -55,28 +77,20 @@ public class Main {
         System.out.println(express.asignarRepartidor("Luis Díaz"));
         System.out.println();
 
-        // 3. Sobrecarga con el objeto completo: valida los datos reales del repartidor.
-        imprimirTitulo("3. SOBRECARGA: asignarRepartidor(Repartidor repartidor)");
+        // 5. Sobrecarga con el objeto completo: valida los datos reales del repartidor.
+        imprimirTitulo("5. SOBRECARGA: asignarRepartidor(Repartidor repartidor)");
         for (int i = 0; i < pedidos.length; i++) {
             System.out.println(pedidos[i].asignarRepartidor(repartidores[i]));
             System.out.println();
         }
 
-        // 4. Casos que no cumplen los requisitos de cada tipo de pedido.
-        imprimirTitulo("4. VALIDACIONES RECHAZADAS");
-        System.out.println(comida.asignarRepartidor(camila));  // sin mochila térmica
+        // 6. Casos que no cumplen los requisitos de cada tipo de pedido.
+        imprimirTitulo("6. VALIDACIONES RECHAZADAS");
+        System.out.println(comida.asignarRepartidor(camila));   // sin mochila térmica
         System.out.println();
         System.out.println(encomienda.asignarRepartidor(luis)); // capacidad insuficiente
         System.out.println();
         System.out.println(express.asignarRepartidor(camila));  // fuera del radio de cobertura
-        System.out.println();
-
-        // 5. Comportamiento genérico heredado de la clase base.
-        imprimirTitulo("5. PEDIDO GENÉRICO (CLASE BASE)");
-        Pedido generico = new Pedido(104, "San Diego 321, Santiago", "Pedido Genérico");
-        System.out.println(generico.asignarRepartidor());
-        System.out.println();
-        System.out.println(generico.asignarRepartidor("Juan Pérez"));
     }
 
     /**

@@ -9,6 +9,12 @@ public class PedidoComida extends Pedido {
     /** Tipo de servicio con el que se identifica esta subclase. */
     private static final String TIPO = "Pedido de Comida";
 
+    /** Minutos de preparación considerados como base. */
+    private static final int TIEMPO_BASE = 15;
+
+    /** Minutos adicionales por cada kilómetro recorrido. */
+    private static final int MINUTOS_POR_KM = 2;
+
     /** Restaurante que prepara el pedido. */
     private String restaurante;
 
@@ -20,11 +26,13 @@ public class PedidoComida extends Pedido {
      *
      * @param idPedido         identificador único del pedido
      * @param direccionEntrega dirección de entrega
+     * @param distanciaKm      distancia hasta la entrega, en kilómetros
      * @param restaurante      restaurante que prepara el pedido
      * @param cantidadPlatos   cantidad de platos incluidos
      */
-    public PedidoComida(int idPedido, String direccionEntrega, String restaurante, int cantidadPlatos) {
-        super(idPedido, direccionEntrega, TIPO);
+    public PedidoComida(int idPedido, String direccionEntrega, float distanciaKm,
+                        String restaurante, int cantidadPlatos) {
+        super(idPedido, direccionEntrega, distanciaKm, TIPO);
         this.restaurante = restaurante;
         this.cantidadPlatos = cantidadPlatos;
     }
@@ -47,6 +55,17 @@ public class PedidoComida extends Pedido {
     /** @param cantidadPlatos nueva cantidad de platos incluidos */
     public void setCantidadPlatos(int cantidadPlatos) {
         this.cantidadPlatos = cantidadPlatos;
+    }
+
+    /**
+     * Implementación del cálculo para pedidos de comida:
+     * 15 minutos base más 2 minutos por cada kilómetro de distancia.
+     *
+     * @return el tiempo estimado de entrega, en minutos
+     */
+    @Override
+    public int calcularTiempoEntrega() {
+        return Math.round(TIEMPO_BASE + MINUTOS_POR_KM * getDistanciaKm());
     }
 
     /**

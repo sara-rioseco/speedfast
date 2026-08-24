@@ -9,6 +9,15 @@ public class PedidoExpress extends Pedido {
     /** Tipo de servicio con el que se identifica esta subclase. */
     private static final String TIPO = "Pedido Express";
 
+    /** Minutos considerados como base para una compra express. */
+    private static final int TIEMPO_BASE = 10;
+
+    /** Distancia a partir de la cual se aplica un recargo de tiempo, en kilómetros. */
+    private static final float DISTANCIA_LIMITE_KM = 5.0f;
+
+    /** Minutos extra que se suman al superar la distancia límite. */
+    private static final int RECARGO_DISTANCIA = 5;
+
     /** Tienda en la que se realiza la compra. */
     private String tienda;
 
@@ -20,11 +29,13 @@ public class PedidoExpress extends Pedido {
      *
      * @param idPedido         identificador único del pedido
      * @param direccionEntrega dirección de entrega
+     * @param distanciaKm      distancia hasta la entrega, en kilómetros
      * @param tienda           tienda en la que se realiza la compra
      * @param radioMaximoKm    radio máximo aceptado, en kilómetros
      */
-    public PedidoExpress(int idPedido, String direccionEntrega, String tienda, float radioMaximoKm) {
-        super(idPedido, direccionEntrega, TIPO);
+    public PedidoExpress(int idPedido, String direccionEntrega, float distanciaKm,
+                         String tienda, float radioMaximoKm) {
+        super(idPedido, direccionEntrega, distanciaKm, TIPO);
         this.tienda = tienda;
         this.radioMaximoKm = radioMaximoKm;
     }
@@ -47,6 +58,20 @@ public class PedidoExpress extends Pedido {
     /** @param radioMaximoKm nuevo radio máximo aceptado, en kilómetros */
     public void setRadioMaximoKm(float radioMaximoKm) {
         this.radioMaximoKm = radioMaximoKm;
+    }
+
+    /**
+     * Implementación del cálculo para compras express:
+     * 10 minutos base, más 5 minutos extra si la distancia supera los 5 km.
+     *
+     * @return el tiempo estimado de entrega, en minutos
+     */
+    @Override
+    public int calcularTiempoEntrega() {
+        if (getDistanciaKm() > DISTANCIA_LIMITE_KM) {
+            return TIEMPO_BASE + RECARGO_DISTANCIA;
+        }
+        return TIEMPO_BASE;
     }
 
     /**
