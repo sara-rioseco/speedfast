@@ -5,14 +5,18 @@ import com.speedfast.model.PedidoComida;
 import com.speedfast.model.PedidoEncomienda;
 import com.speedfast.model.PedidoExpress;
 import com.speedfast.model.Repartidor;
+import com.speedfast.service.ControladorDeEnvios;
 
 /**
- * Clase de prueba del sistema SpeedFast. Instancia un pedido de cada tipo y
- * ejecuta los métodos de la jerarquía para evidenciar el uso de la clase
- * abstracta {@link Pedido}, el cálculo diferenciado del tiempo de entrega y la
- * sobrecarga y sobrescritura de {@code asignarRepartidor()}.
+ * Simulación del sistema de entregas de SpeedFast. Registra pedidos y
+ * repartidores en el {@link ControladorDeEnvios} y recorre el ciclo completo:
+ * asignación automática y manual, cálculo de tiempos, despacho, cancelación e
+ * historial de entregas.
  */
 public class Main {
+
+    /** Ancho de las líneas separadoras de sección. */
+    private static final int ANCHO_SEPARADOR = 62;
 
     /**
      * Punto de entrada de la aplicación.
@@ -20,6 +24,8 @@ public class Main {
      * @param args argumentos de línea de comandos (no se utilizan)
      */
     public static void main(String[] args) {
+
+        ControladorDeEnvios controlador = new ControladorDeEnvios();
 
         // Repartidores disponibles en la plataforma.
         Repartidor juan = new Repartidor(1, "Juan", "Pérez", "+56 9 1111 1111",
@@ -29,68 +35,102 @@ public class Main {
         Repartidor luis = new Repartidor(3, "Luis", "Díaz", "+56 9 3333 3333",
                 "Pasaje Los Olmos 78, Ñuñoa", "Bicicleta", 8.0f, false, true, 1.2f);
 
+        controlador.registrarRepartidor(juan);
+        controlador.registrarRepartidor(camila);
+        controlador.registrarRepartidor(luis);
+
         // Un pedido de cada tipo, referenciados con el tipo de la clase abstracta.
         Pedido comida = new PedidoComida(101, "Av. Italia 456, Providencia",
                 4.0f, "Sushi Kai", 3);
-        Pedido encomienda = new PedidoEncomienda(102, "Av. Independencia 123, Independencia",
+        Pedido encomienda = new PedidoEncomienda(102, "Av. Santa Rosa 567, Santiago",
                 6.0f, 12.5f, "Caja de cartón sellada");
         Pedido express = new PedidoExpress(103, "Av. Apoquindo 1500, Las Condes",
                 7.0f, "Farmacia Central", 3.0f);
 
-        Pedido[] pedidos = {comida, encomienda, express};
-        Repartidor[] repartidores = {juan, camila, luis};
+        controlador.registrarPedido(comida);
+        controlador.registrarPedido(encomienda);
+        controlador.registrarPedido(express);
 
-        // 1. Clase abstracta: mostrarResumen() es común y calcularTiempoEntrega() lo aporta cada subclase.
-        imprimirTitulo("1. RESUMEN DE PEDIDOS Y TIEMPO ESTIMADO DE ENTREGA");
-        for (Pedido pedido : pedidos) {
-            pedido.mostrarResumen();
-            System.out.println();
+        // 1. Estado inicial del sistema.
+        imprimirTitulo("1. PEDIDOS REGISTRADOS EN EL SISTEMA");
+        for (Pedido pedido : controlador.getPedidos()) {
+            System.out.println(pedido);
         }
-
-        // 2. Comparación de los tiempos calculados por cada subclase.
-        imprimirTitulo("2. COMPARACIÓN DE TIEMPOS ESTIMADOS");
-        System.out.printf("%-24s %-6s %-12s %s%n", "TIPO DE PEDIDO", "N°", "DISTANCIA", "TIEMPO ESTIMADO");
-        System.out.println("-".repeat(60));
-        for (Pedido pedido : pedidos) {
-            System.out.printf("%-24s %-6d %-12s %d minutos%n",
-                    pedido.getTipoPedido(),
-                    pedido.getIdPedido(),
-                    String.format("%.1f km", pedido.getDistanciaKm()),
-                    pedido.calcularTiempoEntrega());
-        }
-        System.out.println("-".repeat(60));
         System.out.println();
 
-        // 3. Sobrescritura: el mismo llamado se resuelve según el tipo real del objeto.
-        imprimirTitulo("3. SOBRESCRITURA: asignarRepartidor()");
-        for (Pedido pedido : pedidos) {
-            System.out.println(pedido.asignarRepartidor());
-            System.out.println();
-        }
-
-        // 4. Sobrecarga con el nombre del repartidor.
-        imprimirTitulo("4. SOBRECARGA: asignarRepartidor(String nombreRepartidor)");
-        System.out.println(comida.asignarRepartidor("Juan Pérez"));
+        // 2. Asignación automática: el controlador consulta los requisitos de cada pedido.
+        imprimirTitulo("2. ASIGNACIÓN AUTOMÁTICA DE REPARTIDORES");
+        System.out.println(controlador.asignarAutomaticamente(comida));
         System.out.println();
-        System.out.println(encomienda.asignarRepartidor("Camila Soto"));
+        System.out.println(controlador.asignarAutomaticamente(encomienda));
+        System.out.println();
+
+        // 3. Asignación manual mediante las tres versiones sobrecargadas del método.
+        imprimirTitulo("3. ASIGNACIÓN MANUAL (SOBRECARGA Y VALIDACIONES)");
+        System.out.println(express.asignarRepartidor());
         System.out.println();
         System.out.println(express.asignarRepartidor("Luis Díaz"));
         System.out.println();
+        System.out.println(express.asignarRepartidor(camila));  // rechazado: ocupada en otro reparto
+        System.out.println();
+        System.out.println(express.asignarRepartidor(luis));    // aceptado: cercano y disponible
+        System.out.println();
 
-        // 5. Sobrecarga con el objeto completo: valida los datos reales del repartidor.
-        imprimirTitulo("5. SOBRECARGA: asignarRepartidor(Repartidor repartidor)");
-        for (int i = 0; i < pedidos.length; i++) {
-            System.out.println(pedidos[i].asignarRepartidor(repartidores[i]));
+        // 4. Resumen y comparación de los tiempos calculados por cada subclase.
+        imprimirTitulo("4. RESUMEN DE PEDIDOS Y TIEMPO ESTIMADO");
+        for (Pedido pedido : controlador.getPedidos()) {
+            pedido.mostrarResumen();
             System.out.println();
         }
+        imprimirTablaComparativa(controlador);
 
-        // 6. Casos que no cumplen los requisitos de cada tipo de pedido.
-        imprimirTitulo("6. VALIDACIONES RECHAZADAS");
-        System.out.println(comida.asignarRepartidor(camila));   // sin mochila térmica
+        // 5. Despacho de pedidos (interfaz Despachable).
+        imprimirTitulo("5. DESPACHO DE PEDIDOS (Despachable)");
+        System.out.println(controlador.despachar(comida));
+        System.out.println(controlador.despachar(encomienda));
         System.out.println();
-        System.out.println(encomienda.asignarRepartidor(luis)); // capacidad insuficiente
+
+        // 6. Cancelación de pedidos (interfaz Cancelable).
+        imprimirTitulo("6. CANCELACIÓN DE PEDIDOS (Cancelable)");
+        System.out.printf("Cancelando %s #%d...%n", express.getTipoPedido(), express.getIdPedido());
+        System.out.println(controlador.cancelar(express));
         System.out.println();
-        System.out.println(express.asignarRepartidor(camila));  // fuera del radio de cobertura
+        System.out.printf("Cancelando %s #%d...%n", comida.getTipoPedido(), comida.getIdPedido());
+        System.out.println(controlador.cancelar(comida));  // rechazado: ya fue despachado
+        System.out.println();
+
+        // 7. Historial del sistema y de un pedido en particular (interfaz Rastreable).
+        imprimirTitulo("7. HISTORIAL DE ENTREGAS (Rastreable)");
+        System.out.println("Entregas realizadas por el sistema:");
+        for (String entrega : controlador.verHistorial()) {
+            System.out.println(" - " + entrega);
+        }
+        System.out.println();
+        System.out.printf("Seguimiento del %s #%d:%n", express.getTipoPedido(), express.getIdPedido());
+        for (String evento : express.verHistorial()) {
+            System.out.println(" - " + evento);
+        }
+    }
+
+    /**
+     * Imprime una tabla comparativa con los tiempos estimados de cada pedido.
+     *
+     * @param controlador controlador que contiene los pedidos registrados
+     */
+    private static void imprimirTablaComparativa(ControladorDeEnvios controlador) {
+        System.out.printf("%-24s %-6s %-11s %-24s %s%n",
+                "TIPO DE PEDIDO", "N°", "DISTANCIA", "ESTADO", "TIEMPO");
+        System.out.println("-".repeat(ANCHO_SEPARADOR));
+        for (Pedido pedido : controlador.getPedidos()) {
+            System.out.printf("%-24s %-6d %-11s %-24s %d min%n",
+                    pedido.getTipoPedido(),
+                    pedido.getIdPedido(),
+                    String.format("%.1f km", pedido.getDistanciaKm()),
+                    pedido.getEstado().getDescripcion(),
+                    pedido.calcularTiempoEntrega());
+        }
+        System.out.println("-".repeat(ANCHO_SEPARADOR));
+        System.out.println();
     }
 
     /**
@@ -99,8 +139,8 @@ public class Main {
      * @param titulo texto de la sección
      */
     private static void imprimirTitulo(String titulo) {
-        System.out.println("=".repeat(60));
+        System.out.println("=".repeat(ANCHO_SEPARADOR));
         System.out.println(titulo);
-        System.out.println("=".repeat(60));
+        System.out.println("=".repeat(ANCHO_SEPARADOR));
     }
 }

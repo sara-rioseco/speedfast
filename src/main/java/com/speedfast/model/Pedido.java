@@ -1,12 +1,19 @@
 package com.speedfast.model;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Pedido genérico de SpeedFast y clase base abstracta de la jerarquía.
  * Reúne los atributos y el comportamiento comunes a todo pedido, y delega en
- * cada subclase el cálculo de su tiempo de entrega mediante el método abstracto
- * {@link #calcularTiempoEntrega()}.
+ * cada subclase el cálculo de su tiempo de entrega y los requisitos que debe
+ * cumplir el repartidor.
+ *
+ * <p>Implementa las interfaces {@link Despachable}, {@link Cancelable} y
+ * {@link Rastreable}, de modo que las operaciones de despacho, cancelación y
+ * seguimiento quedan separadas del resto de la lógica del pedido.</p>
  */
-public abstract class Pedido {
+public abstract class Pedido implements Despachable, Cancelable, Rastreable {
 
     /** Identificador único del pedido. */
     private int idPedido;
@@ -20,8 +27,17 @@ public abstract class Pedido {
     /** Tipo de servicio: comida, encomienda o compra express. */
     private String tipoPedido;
 
+    /** Estado actual del pedido dentro del sistema. */
+    private EstadoPedido estado;
+
+    /** Repartidor que tomó el pedido, o {@code null} si aún no se asigna. */
+    private Repartidor repartidorAsignado;
+
+    /** Eventos registrados durante la vida del pedido. */
+    private final List<String> historial = new ArrayList<>();
+
     /**
-     * Crea un pedido con todos sus atributos comunes.
+     * Crea un pedido con todos sus atributos comunes, en estado pendiente.
      *
      * @param idPedido         identificador único del pedido
      * @param direccionEntrega dirección de entrega
@@ -33,6 +49,8 @@ public abstract class Pedido {
         this.direccionEntrega = direccionEntrega;
         this.distanciaKm = distanciaKm;
         this.tipoPedido = tipoPedido;
+        this.estado = EstadoPedido.PENDIENTE;
+        registrarEvento("Pedido registrado en el sistema");
     }
 
     /** @return el identificador del pedido */
@@ -75,6 +93,16 @@ public abstract class Pedido {
         this.tipoPedido = tipoPedido;
     }
 
+    /** @return el estado actual del pedido */
+    public EstadoPedido getEstado() {
+        return estado;
+    }
+
+    /** @return el repartidor asignado, o {@code null} si aún no se asigna */
+    public Repartidor getRepartidorAsignado() {
+        return repartidorAsignado;
+    }
+
     /**
      * Calcula el tiempo estimado de entrega del pedido.
      * Cada subclase aplica su propia fórmula según el tipo de servicio.
@@ -84,13 +112,74 @@ public abstract class Pedido {
     public abstract int calcularTiempoEntrega();
 
     /**
-     * Imprime en consola los datos básicos del pedido junto con su tiempo
+     * Indica si un repartidor cumple los requisitos propios del tipo de pedido.
+     * Permite que el controlador busque candidatos sin conocer cada regla.
+     *
+     * @param repartidor repartidor a evaluar
+     * @return {@code true} si el repartidor puede tomar este pedido
+     */
+    public abstract boolean cumpleRequisitos(Repartidor repartidor);
+
+    /**
+     * Imprime en consola los datos básicos del pedido, su estado y su tiempo
      * estimado de entrega, obtenido desde la subclase correspondiente.
      */
     public void mostrarResumen() {
         System.out.print(encabezado());
         System.out.printf("Distancia: %.1f km%n", distanciaKm);
+        System.out.printf("Repartidor asignado: %s%n", nombreRepartidorAsignado());
+        System.out.printf("Estado: %s%n", estado.getDescripcion());
         System.out.printf("Tiempo estimado de entrega: %d minutos%n", calcularTiempoEntrega());
+    }
+
+    /**
+     * Despacha el pedido, siempre que tenga repartidor y no esté cancelado.
+     *
+     * @return el resultado de la operación, listo para imprimirse en consola
+     */
+    @Override
+    public String despachar() {
+        if (estado == EstadoPedido.CANCELADO) {
+            return String.format("No se puede despachar el pedido %d: se encuentra cancelado.", idPedido);
+        }
+        if (estado == EstadoPedido.DESPACHADO) {
+            return String.format("El pedido %d ya había sido despachado.", idPedido);
+        }
+        if (repartidorAsignado == null) {
+            return String.format("No se puede despachar el pedido %d: aún no tiene repartidor asignado.", idPedido);
+        }
+        estado = EstadoPedido.DESPACHADO;
+        registrarEvento("Pedido despachado con " + repartidorAsignado.getNombreCompleto());
+        return String.format("Pedido %d despachado correctamente con %s (%d minutos estimados).",
+                idPedido, repartidorAsignado.getNombreCompleto(), calcularTiempoEntrega());
+    }
+
+    /**
+     * Cancela el pedido, siempre que todavía no haya sido despachado.
+     *
+     * @return el resultado de la operación, listo para imprimirse en consola
+     */
+    @Override
+    public String cancelar() {
+        if (estado == EstadoPedido.DESPACHADO) {
+            return String.format("No se puede cancelar el pedido %d: ya fue despachado.", idPedido);
+        }
+        if (estado == EstadoPedido.CANCELADO) {
+            return String.format("El pedido %d ya se encontraba cancelado.", idPedido);
+        }
+        estado = EstadoPedido.CANCELADO;
+        registrarEvento("Pedido cancelado");
+        return String.format("Pedido %d cancelado exitosamente.", idPedido);
+    }
+
+    /**
+     * Entrega el historial de eventos del pedido.
+     *
+     * @return una copia de la lista de eventos registrados
+     */
+    @Override
+    public List<String> verHistorial() {
+        return new ArrayList<>(historial);
     }
 
     /**
@@ -106,7 +195,9 @@ public abstract class Pedido {
     }
 
     /**
-     * Sobrecarga que recibe el nombre del repartidor asignado.
+     * Sobrecarga que recibe el nombre del repartidor asignado. Entrega un
+     * mensaje informativo: la asignación efectiva requiere el objeto completo,
+     * ya que solo así pueden validarse los requisitos del pedido.
      *
      * @param nombreRepartidor nombre del repartidor que tomará el pedido
      * @return mensaje de asignación para imprimir en consola
@@ -120,16 +211,41 @@ public abstract class Pedido {
 
     /**
      * Sobrecarga que recibe el repartidor completo para validar sus datos.
+     * Cada subclase la sobrescribe con los requisitos de su tipo de servicio.
      *
      * @param repartidor repartidor candidato a tomar el pedido
      * @return mensaje de asignación para imprimir en consola
      */
     public String asignarRepartidor(Repartidor repartidor) {
+        confirmarAsignacion(repartidor);
         return encabezado()
                 + String.format("Asignando repartidor...%n")
                 + String.format("   Verificando disponibilidad general... OK%n")
                 + String.format("   Pedido asignado a %s (%s)",
                         repartidor.getNombreCompleto(), repartidor.getTipoVehiculo());
+    }
+
+    /**
+     * Registra la asignación de un repartidor y actualiza el estado del pedido.
+     * Lo utilizan las subclases una vez validados sus propios requisitos.
+     *
+     * @param repartidor repartidor que tomará el pedido
+     */
+    protected void confirmarAsignacion(Repartidor repartidor) {
+        this.repartidorAsignado = repartidor;
+        this.estado = EstadoPedido.ASIGNADO;
+        registrarEvento("Repartidor asignado: " + repartidor.getNombreCompleto());
+    }
+
+    /**
+     * Agrega un evento al historial del pedido. Se mantiene privado porque el
+     * constructor lo invoca: un método sobrescribible llamado desde el
+     * constructor se ejecutaría antes de que la subclase termine de inicializarse.
+     *
+     * @param evento descripción del evento ocurrido
+     */
+    private void registrarEvento(String evento) {
+        historial.add(evento);
     }
 
     /**
@@ -142,10 +258,15 @@ public abstract class Pedido {
                 + String.format("Dirección de entrega: %s%n", direccionEntrega);
     }
 
+    /** @return el nombre del repartidor asignado, o un texto por defecto */
+    private String nombreRepartidorAsignado() {
+        return repartidorAsignado == null ? "sin asignar" : repartidorAsignado.getNombreCompleto();
+    }
+
     /** @return representación textual breve del pedido */
     @Override
     public String toString() {
-        return String.format("%s [id=%d, dirección=%s, %.1f km]",
-                tipoPedido, idPedido, direccionEntrega, distanciaKm);
+        return String.format("%s [id=%d, dirección=%s, %.1f km, %s]",
+                tipoPedido, idPedido, direccionEntrega, distanciaKm, estado.getDescripcion());
     }
 }

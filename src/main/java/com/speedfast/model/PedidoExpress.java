@@ -75,6 +75,26 @@ public class PedidoExpress extends Pedido {
     }
 
     /**
+     * Requisito propio de este tipo de pedido: el repartidor debe tener
+     * disponibilidad inmediata y encontrarse dentro del radio de cobertura.
+     *
+     * @param repartidor repartidor a evaluar
+     * @return {@code true} si el repartidor puede tomar este pedido
+     */
+    @Override
+    public boolean cumpleRequisitos(Repartidor repartidor) {
+        return repartidor.isDisponibleInmediato() && estaCerca(repartidor);
+    }
+
+    /**
+     * @param repartidor repartidor a evaluar
+     * @return {@code true} si está dentro del radio de cobertura del pedido
+     */
+    private boolean estaCerca(Repartidor repartidor) {
+        return repartidor.getDistanciaKm() <= radioMaximoKm;
+    }
+
+    /**
      * Sobrescritura: busca al repartidor más cercano con disponibilidad inmediata.
      *
      * @return mensaje de asignación para imprimir en consola
@@ -118,9 +138,8 @@ public class PedidoExpress extends Pedido {
                 + String.format("   Candidato: %s | Distancia: %.1f km | Radio máximo: %.1f km%n",
                         repartidor.getNombreCompleto(), repartidor.getDistanciaKm(), radioMaximoKm);
 
-        boolean estaCerca = repartidor.getDistanciaKm() <= radioMaximoKm;
-
-        if (repartidor.isDisponibleInmediato() && estaCerca) {
+        if (cumpleRequisitos(repartidor)) {
+            confirmarAsignacion(repartidor);
             return detalle
                     + String.format("   Repartidor más cercano con disponibilidad inmediata encontrado.%n")
                     + String.format("   Pedido asignado a %s", repartidor.getNombreCompleto());
@@ -128,7 +147,7 @@ public class PedidoExpress extends Pedido {
         if (!repartidor.isDisponibleInmediato()) {
             return detalle
                     + String.format("   Verificando disponibilidad inmediata... RECHAZADO%n")
-                    + String.format("   %s está ocupado en otro reparto: se buscará otro repartidor.",
+                    + String.format("   %s tiene otro reparto en curso: se buscará otro repartidor.",
                             repartidor.getNombreCompleto());
         }
         return detalle

@@ -69,6 +69,18 @@ public class PedidoComida extends Pedido {
     }
 
     /**
+     * Requisito propio de este tipo de pedido: el repartidor debe contar con
+     * mochila térmica para mantener la temperatura de los alimentos.
+     *
+     * @param repartidor repartidor a evaluar
+     * @return {@code true} si el repartidor puede tomar este pedido
+     */
+    @Override
+    public boolean cumpleRequisitos(Repartidor repartidor) {
+        return repartidor.isMochilaTermica();
+    }
+
+    /**
      * Sobrescritura: busca un repartidor que disponga de mochila térmica.
      *
      * @return mensaje de asignación para imprimir en consola
@@ -112,7 +124,8 @@ public class PedidoComida extends Pedido {
                 + String.format("   Candidato: %s en %s%n",
                         repartidor.getNombreCompleto(), repartidor.getTipoVehiculo());
 
-        if (repartidor.isMochilaTermica()) {
+        if (cumpleRequisitos(repartidor)) {
+            confirmarAsignacion(repartidor);
             return detalle
                     + String.format("   Verificando mochila térmica... OK%n")
                     + String.format("   Pedido asignado a %s", repartidor.getNombreCompleto());

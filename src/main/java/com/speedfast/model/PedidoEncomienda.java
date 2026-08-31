@@ -69,6 +69,31 @@ public class PedidoEncomienda extends Pedido {
     }
 
     /**
+     * Requisito propio de este tipo de pedido: el repartidor debe poder cargar
+     * el peso declarado y la encomienda debe tener un embalaje válido.
+     *
+     * @param repartidor repartidor a evaluar
+     * @return {@code true} si el repartidor puede tomar este pedido
+     */
+    @Override
+    public boolean cumpleRequisitos(Repartidor repartidor) {
+        return pesoValido(repartidor) && embalajeValido();
+    }
+
+    /**
+     * @param repartidor repartidor a evaluar
+     * @return {@code true} si el repartidor puede cargar el peso declarado
+     */
+    private boolean pesoValido(Repartidor repartidor) {
+        return pesoKg <= repartidor.getPesoMaximo();
+    }
+
+    /** @return {@code true} si la encomienda declara un embalaje */
+    private boolean embalajeValido() {
+        return tipoEmbalaje != null && !tipoEmbalaje.isBlank();
+    }
+
+    /**
      * Sobrescritura: busca un repartidor capaz de transportar el peso declarado.
      *
      * @return mensaje de asignación para imprimir en consola
@@ -112,15 +137,13 @@ public class PedidoEncomienda extends Pedido {
                 + String.format("   Candidato: %s | Capacidad: %.1f kg%n",
                         repartidor.getNombreCompleto(), repartidor.getPesoMaximo());
 
-        boolean embalajeValido = tipoEmbalaje != null && !tipoEmbalaje.isBlank();
-        boolean pesoValido = pesoKg <= repartidor.getPesoMaximo();
-
-        if (pesoValido && embalajeValido) {
+        if (cumpleRequisitos(repartidor)) {
+            confirmarAsignacion(repartidor);
             return detalle
                     + String.format("   Validando peso y embalaje... OK%n")
                     + String.format("   Pedido asignado a %s", repartidor.getNombreCompleto());
         }
-        if (!pesoValido) {
+        if (!pesoValido(repartidor)) {
             return detalle
                     + String.format("   Validando peso y embalaje... RECHAZADO%n")
                     + String.format("   El peso supera la capacidad de %s: se buscará otro repartidor.",
