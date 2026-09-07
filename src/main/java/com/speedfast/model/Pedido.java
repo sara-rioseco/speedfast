@@ -94,12 +94,12 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
     }
 
     /** @return el estado actual del pedido */
-    public EstadoPedido getEstado() {
+    public synchronized EstadoPedido getEstado() {
         return estado;
     }
 
     /** @return el repartidor asignado, o {@code null} si aún no se asigna */
-    public Repartidor getRepartidorAsignado() {
+    public synchronized Repartidor getRepartidorAsignado() {
         return repartidorAsignado;
     }
 
@@ -135,10 +135,14 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
     /**
      * Despacha el pedido, siempre que tenga repartidor y no esté cancelado.
      *
+     * <p>Se declara {@code synchronized} porque varios repartidores trabajan en
+     * paralelo: la comprobación del estado y su actualización deben ocurrir de
+     * forma indivisible para evitar condiciones de carrera.</p>
+     *
      * @return el resultado de la operación, listo para imprimirse en consola
      */
     @Override
-    public String despachar() {
+    public synchronized String despachar() {
         if (estado == EstadoPedido.CANCELADO) {
             return String.format("No se puede despachar el pedido %d: se encuentra cancelado.", idPedido);
         }
@@ -160,7 +164,10 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
      * @return el resultado de la operación, listo para imprimirse en consola
      */
     @Override
-    public String cancelar() {
+    public synchronized String cancelar() {
+        if (estado == EstadoPedido.ENTREGADO) {
+            return String.format("No se puede cancelar el pedido %d: ya fue entregado.", idPedido);
+        }
         if (estado == EstadoPedido.DESPACHADO) {
             return String.format("No se puede cancelar el pedido %d: ya fue despachado.", idPedido);
         }
@@ -173,12 +180,27 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
     }
 
     /**
+     * Confirma que el pedido llegó a destino, cerrando su ciclo de vida.
+     * Solo puede confirmarse un pedido que fue despachado previamente.
+     *
+     * @return {@code true} si el pedido pasó a estado entregado
+     */
+    public synchronized boolean confirmarEntrega() {
+        if (estado != EstadoPedido.DESPACHADO) {
+            return false;
+        }
+        estado = EstadoPedido.ENTREGADO;
+        registrarEvento("Pedido entregado en " + direccionEntrega);
+        return true;
+    }
+
+    /**
      * Entrega el historial de eventos del pedido.
      *
      * @return una copia de la lista de eventos registrados
      */
     @Override
-    public List<String> verHistorial() {
+    public synchronized List<String> verHistorial() {
         return new ArrayList<>(historial);
     }
 
@@ -195,18 +217,23 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
     }
 
     /**
-     * Sobrecarga que recibe el nombre del repartidor asignado. Entrega un
-     * mensaje informativo: la asignación efectiva requiere el objeto completo,
-     * ya que solo así pueden validarse los requisitos del pedido.
+     * Sobrecarga que recibe solo el nombre del repartidor. Deja constancia del
+     * candidato en el historial, pero no confirma la asignación: sin el objeto
+     * {@link Repartidor} no es posible validar los requisitos del pedido, y el
+     * mensaje en consola no debe afirmar algo que el estado del objeto no refleja.
      *
-     * @param nombreRepartidor nombre del repartidor que tomará el pedido
+     * <p>Para asignar por nombre de forma efectiva, el controlador de envíos
+     * resuelve el nombre y delega en {@link #asignarRepartidor(Repartidor)}.</p>
+     *
+     * @param nombreRepartidor nombre del repartidor propuesto
      * @return mensaje de asignación para imprimir en consola
      */
-    public String asignarRepartidor(String nombreRepartidor) {
+    public synchronized String asignarRepartidor(String nombreRepartidor) {
+        registrarEvento("Candidato propuesto: " + nombreRepartidor);
         return encabezado()
                 + String.format("Asignando repartidor...%n")
-                + String.format("   Verificando disponibilidad general... OK%n")
-                + String.format("   Pedido asignado a %s", nombreRepartidor);
+                + String.format("   Candidato propuesto: %s%n", nombreRepartidor)
+                + String.format("   La asignación se confirmará al validar sus datos.");
     }
 
     /**
@@ -231,7 +258,7 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
      *
      * @param repartidor repartidor que tomará el pedido
      */
-    protected void confirmarAsignacion(Repartidor repartidor) {
+    protected synchronized void confirmarAsignacion(Repartidor repartidor) {
         this.repartidorAsignado = repartidor;
         this.estado = EstadoPedido.ASIGNADO;
         registrarEvento("Repartidor asignado: " + repartidor.getNombreCompleto());

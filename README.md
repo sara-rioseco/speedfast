@@ -9,6 +9,9 @@ El proyecto se construye de forma incremental:
 * **Semana 1 — "Explorando la sobrecarga y sobreescritura en clases derivadas"**: jerarquía de pedidos y método `asignarRepartidor()` sobrecargado y sobrescrito según el tipo de servicio.
 * **Semana 2 — "Definiendo una clase abstracta y su jerarquía"**: `Pedido` se convierte en **clase abstracta**, se incorpora el atributo común `distanciaKm`, el método implementado `mostrarResumen()` y el método abstracto `calcularTiempoEntrega()`.
 * **Semana 3 — "Diseñando un sistema orientado a objetos con clases abstractas, polimorfismo e interfaces"**: se incorporan las interfaces `Despachable`, `Cancelable` y `Rastreable`, el estado del pedido, y la clase `ControladorDeEnvios`, que concentra la lógica de gestión sobre colecciones dinámicas (`ArrayList`).
+* **Semana 4 — "Ejecutando tareas en paralelo con hilos en Java"**: `Repartidor` implementa `Runnable` y cada repartidor pasa a ejecutarse como un hilo independiente que recorre su propia lista de pedidos. `Main` lanza a todos los repartidores en paralelo con `ExecutorService`, y el acceso al historial compartido se protege con `synchronized`.
+
+> El proyecto se mantiene como un único proyecto Maven en la raíz del repositorio: cada semana se construye sobre la anterior, y el avance semanal queda registrado en los commits en lugar de duplicar el código en carpetas separadas.
 
 Cada tipo de pedido tiene criterios distintos, tanto para asignar repartidor como para estimar su tiempo de entrega:
 
@@ -28,6 +31,9 @@ El sistema aplica los principios fundamentales de la Programación Orientada a O
 * **Polimorfismo** — el `ControladorDeEnvios` trabaja con referencias `Pedido` y con listas `List<Pedido>`, sin conocer el tipo concreto de cada objeto.
 * **Colecciones dinámicas** — el controlador administra `ArrayList` de pedidos, repartidores e historial de entregas.
 * **Separación de responsabilidades** — la lógica de gestión vive en `ControladorDeEnvios`; `Main` solo simula y presenta resultados.
+* **Concurrencia** — `Repartidor` implementa `Runnable` y se ejecuta en paralelo mediante `ExecutorService`, con pausas aleatorias que simulan cada entrega.
+* **Sincronización** — los métodos que modifican estado compartido son `synchronized`, evitando condiciones de carrera sobre el historial de entregas.
+* **Manejo de excepciones** — `EntregaException` e `InterruptedException` se capturan por pedido, de modo que un fallo no detiene el recorrido completo.
 
 ---
 
@@ -43,13 +49,15 @@ speedfast/
 │   │   ├── PedidoComida.java          # Mochila térmica · 15 min + 2 min/km
 │   │   ├── PedidoEncomienda.java      # Peso y embalaje · 20 min + 1,5 min/km
 │   │   ├── PedidoExpress.java         # Cercanía y disponibilidad · 10 min (+5 si > 5 km)
-│   │   ├── Repartidor.java            # Repartidor de la plataforma
-│   │   ├── EstadoPedido.java          # Enum: pendiente, asignado, despachado, cancelado
+│   │   ├── Repartidor.java            # Implementa Runnable: entrega sus pedidos en un hilo
+│   │   ├── EstadoPedido.java          # Enum: pendiente, asignado, despachado, entregado, cancelado
 │   │   ├── Despachable.java           # Interfaz: despachar()
 │   │   ├── Cancelable.java            # Interfaz: cancelar()
 │   │   └── Rastreable.java            # Interfaz: verHistorial()
+│   ├── exception/
+│   │   └── EntregaException.java      # Error de dominio al entregar un pedido
 │   └── service/
-│       └── ControladorDeEnvios.java   # Lógica de gestión y colecciones dinámicas
+│       └── ControladorDeEnvios.java   # Lógica de gestión, colecciones y sincronización
 ├── pom.xml
 └── README.md
 ```
@@ -90,6 +98,7 @@ classDiagram
         +asignarRepartidor(Repartidor) String
         +despachar() String
         +cancelar() String
+        +confirmarEntrega() boolean
         +verHistorial() List~String~
         #confirmarAsignacion(Repartidor) void
         #encabezado() String
@@ -113,10 +122,19 @@ classDiagram
         -List~Repartidor~ repartidores
         -List~String~ historialEntregas
         +registrarPedido(Pedido) void
+        +asignarPedidoA(Pedido, Repartidor) String
+        +asignarRepartidor(Pedido, String) String
+        +buscarRepartidorPorNombre(String) Repartidor
         +asignarAutomaticamente(Pedido) String
         +despachar(Pedido) String
+        +registrarEntrega(Pedido) boolean
         +cancelar(Pedido) String
         +verHistorial() List~String~
+    }
+
+    class Runnable {
+        <<interface>>
+        +run() void
     }
 
     class Repartidor {
@@ -125,6 +143,10 @@ classDiagram
         -boolean mochilaTermica
         -boolean disponibleInmediato
         -float distanciaKm
+        -List~Pedido~ pedidosAsignados
+        +agregarPedido(Pedido) void
+        +run() void
+        -entregarPedido(Pedido) void
     }
 
     class EstadoPedido {
@@ -132,18 +154,27 @@ classDiagram
         PENDIENTE
         ASIGNADO
         DESPACHADO
+        ENTREGADO
         CANCELADO
+    }
+
+    class EntregaException {
+        <<exception>>
     }
 
     Despachable <|.. Pedido
     Cancelable <|.. Pedido
     Rastreable <|.. Pedido
     Rastreable <|.. ControladorDeEnvios
+    Runnable <|.. Repartidor
     Pedido <|-- PedidoComida
     Pedido <|-- PedidoEncomienda
     Pedido <|-- PedidoExpress
     Pedido --> Repartidor : repartidorAsignado
     Pedido --> EstadoPedido : estado
+    Repartidor o-- Pedido : pedidosAsignados
+    Repartidor ..> EntregaException : lanza
+    Repartidor --> ControladorDeEnvios : registra entregas
     ControladorDeEnvios o-- Pedido
     ControladorDeEnvios o-- Repartidor
 ```
@@ -156,9 +187,10 @@ classDiagram
 * **`PedidoComida`** — agrega `restaurante` y `cantidadPlatos`. Solo acepta repartidores con **mochila térmica**.
 * **`PedidoEncomienda`** — agrega `pesoKg` y `tipoEmbalaje`. Valida la **capacidad de carga** del repartidor y que el **embalaje** esté declarado.
 * **`PedidoExpress`** — agrega `tienda` y `radioMaximoKm`. Exige **disponibilidad inmediata** y **cercanía** dentro del radio de cobertura.
-* **`Repartidor`** — datos del repartidor, incluidos `pesoMaximo`, `mochilaTermica`, `disponibleInmediato` y `distanciaKm`, que son los atributos que permiten validar cada tipo de pedido.
+* **`Repartidor`** — datos del repartidor (`pesoMaximo`, `mochilaTermica`, `disponibleInmediato`, `distanciaKm`), que son los atributos que permiten validar cada tipo de pedido. Implementa `Runnable`: mantiene su lista de `pedidosAsignados` y su método `run()` los entrega uno a uno, simulando el traslado con pausas aleatorias.
 * **`EstadoPedido`** — enumeración con los estados válidos de un pedido, evitando textos sueltos repartidos por el código.
-* **`ControladorDeEnvios`** — registra pedidos y repartidores, asigna automáticamente, despacha, cancela y mantiene el historial de entregas.
+* **`EntregaException`** — excepción de dominio que permite informar por qué falló una entrega sin interrumpir el recorrido completo del repartidor.
+* **`ControladorDeEnvios`** — registra pedidos y repartidores, asigna, despacha, cancela y mantiene el historial de entregas. Sus métodos son `synchronized` porque varios hilos de repartidor lo utilizan al mismo tiempo.
 
 ### Interfaces implementadas
 
@@ -191,8 +223,36 @@ Permite que el `ControladorDeEnvios` busque un repartidor adecuado **sin conocer
 | Firma | Comportamiento |
 |---|---|
 | `asignarRepartidor()` | Mensaje genérico: aún no se designa a nadie |
-| `asignarRepartidor(String nombreRepartidor)` | Mensaje informativo con el nombre indicado |
+| `asignarRepartidor(String nombreRepartidor)` | Registra el candidato en el historial del pedido y advierte que la asignación aún no se confirma: sin el objeto no es posible validar los requisitos |
 | `asignarRepartidor(Repartidor repartidor)` | Valida los requisitos del tipo de pedido y, si se cumplen, registra la asignación |
+
+Para asignar por nombre de forma efectiva se usa `ControladorDeEnvios.asignarRepartidor(pedido, nombre)`: el controlador es quien conoce la lista de repartidores, resuelve el nombre y delega en la versión que sí valida. Así el mensaje mostrado en consola nunca afirma algo que el estado del objeto no refleje.
+
+---
+
+## Concurrencia (Semana 4)
+
+Cada repartidor se ejecuta como un hilo independiente que recorre su propia lista de pedidos:
+
+| Elemento | Uso en el proyecto |
+|---|---|
+| `Runnable` | `Repartidor` lo implementa; su método `run()` recorre `pedidosAsignados` y entrega uno a uno |
+| `Thread.sleep()` | Simula el traslado con una pausa aleatoria de entre 500 y 2000 ms por pedido |
+| `ExecutorService` | `Main` usa `Executors.newFixedThreadPool(3)` para lanzar a los tres repartidores en paralelo |
+| `shutdown()` + `awaitTermination()` | La simulación continúa hasta que todos los repartidores terminan sus entregas |
+| `synchronized` | Protege el historial compartido en `ControladorDeEnvios` y las transiciones de estado de `Pedido` |
+
+Como cada repartidor solo toca sus propios pedidos y el único recurso realmente compartido es el `ControladorDeEnvios`, basta con sincronizar sus métodos. Ninguno de ellos realiza pausas, por lo que los hilos nunca quedan bloqueados esperando a otro.
+
+### Manejo de excepciones
+
+| Punto crítico | Tratamiento |
+|---|---|
+| `Thread.sleep()` durante una entrega | Se captura `InterruptedException`, se restaura la marca de interrupción y el repartidor termina de forma controlada |
+| Pedido que no puede entregarse | Se lanza `EntregaException` y se captura por pedido: el repartidor informa el motivo y continúa con el siguiente |
+| Error inesperado dentro del hilo | Un `catch (RuntimeException)` evita que el hilo muera en silencio, ya que `execute()` no propaga las excepciones |
+| `awaitTermination()` en `Main` | Se captura `InterruptedException`, se llama a `shutdownNow()` y se restaura la interrupción |
+| Repartidor sin pedidos | Se informa por consola en lugar de tratarse como error |
 
 ---
 
@@ -223,46 +283,50 @@ mvn exec:java -Dexec.mainClass="com.speedfast.app.Main"
 
 Desde IntelliJ IDEA: abrir el proyecto y ejecutar el método `main()` de la clase `Main` (paquete `com.speedfast.app`).
 
-Al ejecutar el programa, la consola muestra siete secciones:
+Al ejecutar el programa, la consola muestra cinco secciones:
 
-1. **Pedidos registrados** — estado inicial del sistema.
-2. **Asignación automática** — el controlador busca un repartidor que cumpla los requisitos de cada pedido.
-3. **Asignación manual** — las tres versiones sobrecargadas de `asignarRepartidor()`, incluido un caso rechazado.
-4. **Resumen y tiempo estimado** — `mostrarResumen()` de cada pedido y tabla comparativa.
-5. **Despacho** — interfaz `Despachable`.
-6. **Cancelación** — interfaz `Cancelable`, incluido un caso rechazado por pedido ya despachado.
-7. **Historial** — interfaz `Rastreable`: entregas del sistema y seguimiento de un pedido.
+1. **Preparación** — se registran tres repartidores y siete pedidos, y se asignan según el perfil de cada repartidor (Juan tiene mochila térmica, Camila dispone de furgón y Luis se mueve en bicicleta dentro del radio de cobertura).
+2. **Simulación concurrente** — los tres repartidores entregan en paralelo; sus mensajes aparecen intercalados, lo que evidencia que los hilos se ejecutan simultáneamente.
+3. **Estado final** — tabla con el estado y el tiempo estimado de cada pedido.
+4. **Cancelación** — interfaz `Cancelable` sobre el pedido que quedó pendiente.
+5. **Historial** — interfaz `Rastreable`: las seis entregas realizadas por el sistema.
 
 ### Ejemplo de salida
 
 ```text
 ==============================================================
-5. DESPACHO DE PEDIDOS (Despachable)
+2. SIMULACIÓN CONCURRENTE DE ENTREGAS
 ==============================================================
-Pedido 101 despachado correctamente con Juan Pérez (23 minutos estimados).
-Pedido 102 despachado correctamente con Camila Soto (29 minutos estimados).
+[Repartidor: Juan] Entregando Pedido de Comida #101... (23 min estimados)
+[Repartidor: Camila] Entregando Pedido de Encomienda #103... (29 min estimados)
+[Repartidor: Luis] Entregando Pedido Express #105... (15 min estimados)
+[Repartidor: Luis] Pedido #105 entregado.
+[Repartidor: Luis] Entregando Pedido Express #106... (10 min estimados)
+[Repartidor: Juan] Pedido #101 entregado.
+[Repartidor: Juan] Entregando Pedido de Comida #102... (27 min estimados)
+[Repartidor: Camila] Pedido #103 entregado.
+[Repartidor: Camila] Entregando Pedido de Encomienda #104... (34 min estimados)
+[Repartidor: Luis] Pedido #106 entregado.
+[Repartidor: Luis] Recorrido finalizado.
+[Repartidor: Juan] Pedido #102 entregado.
+[Repartidor: Juan] Recorrido finalizado.
+[Repartidor: Camila] Pedido #104 entregado.
+[Repartidor: Camila] Recorrido finalizado.
+
+[Sistema] Todos los repartidores finalizaron sus entregas.
 
 ==============================================================
-6. CANCELACIÓN DE PEDIDOS (Cancelable)
+5. HISTORIAL DE ENTREGAS (Rastreable)
 ==============================================================
-Cancelando Pedido Express #103...
-Pedido 103 cancelado exitosamente.
-
-Cancelando Pedido de Comida #101...
-No se puede cancelar el pedido 101: ya fue despachado.
-
-==============================================================
-7. HISTORIAL DE ENTREGAS (Rastreable)
-==============================================================
-Entregas realizadas por el sistema:
  - Pedido de Comida #101 — entregado por Juan Pérez
- - Pedido de Encomienda #102 — entregado por Camila Soto
-
-Seguimiento del Pedido Express #103:
- - Pedido registrado en el sistema
- - Repartidor asignado: Luis Díaz
- - Pedido cancelado
+ - Pedido Express #105 — entregado por Luis Díaz
+ - Pedido de Encomienda #103 — entregado por Camila Soto
+ - Pedido de Comida #102 — entregado por Juan Pérez
+ - Pedido Express #106 — entregado por Luis Díaz
+ - Pedido de Encomienda #104 — entregado por Camila Soto
 ```
+
+El orden de las líneas cambia en cada ejecución, ya que las pausas son aleatorias, pero siempre se completan las seis entregas.
 
 ---
 

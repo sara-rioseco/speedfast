@@ -15,6 +15,9 @@ public enum EstadoPedido {
     /** El pedido salió a reparto. */
     DESPACHADO("despachado"),
 
+    /** El pedido llegó a su destino. */
+    ENTREGADO("entregado"),
+
     /** El pedido fue cancelado antes de ser despachado. */
     CANCELADO("cancelado");
 
