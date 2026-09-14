@@ -2,6 +2,7 @@ package com.speedfast.model;
 
 import com.speedfast.exception.EntregaException;
 import com.speedfast.service.ControladorDeEnvios;
+import com.speedfast.service.ZonaDeCarga;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -12,8 +13,8 @@ import java.util.Random;
  * requisitos de cada tipo de pedido antes de aceptar la asignación.
  *
  * <p>Implementa {@link Runnable}, de modo que cada repartidor se ejecuta como
- * un hilo independiente que recorre su propia lista de pedidos y simula las
- * entregas en paralelo con el resto de los repartidores.</p>
+ * un hilo independiente que retira pedidos desde la {@link ZonaDeCarga}
+ * compartida y simula las entregas en paralelo con el resto de repartidores.</p>
  */
 public class Repartidor implements Runnable {
 
@@ -24,37 +25,45 @@ public class Repartidor implements Runnable {
     private static final int ESPERA_ALEATORIA_MS = 1500;
 
     /** Identificador único del repartidor. */
-    private int idRepartidor;
+    private final int idRepartidor;
 
     /** Nombre del repartidor. */
-    private String nombre;
+    private final String nombre;
 
     /** Apellido del repartidor. */
-    private String apellido;
+    private final String apellido;
 
     /** Teléfono de contacto. */
-    private String telefono;
+    private final String telefono;
 
     /** Dirección particular del repartidor. */
-    private String direccion;
+    private final String direccion;
 
     /** Vehículo con el que realiza los repartos. */
-    private String tipoVehiculo;
+    private final String tipoVehiculo;
 
     /** Carga máxima que puede transportar, en kilogramos. */
-    private float pesoMaximo;
+    private final float pesoMaximo;
 
     /** Indica si cuenta con mochila térmica, requisito de los pedidos de comida. */
-    private boolean mochilaTermica;
+    private final boolean mochilaTermica;
 
-    /** Indica si puede tomar un pedido de inmediato. */
-    private boolean disponibleInmediato;
+    /**
+     * Indica si puede tomar un pedido de inmediato. Es el único atributo que
+     * cambia durante la simulación, y se declara {@code volatile} porque se
+     * escribe desde el controlador y se lee desde la zona de carga, que usan
+     * bloqueos distintos.
+     */
+    private volatile boolean disponibleInmediato;
 
     /** Distancia a la que se encuentra del punto de retiro, en kilómetros. */
-    private float distanciaKm;
+    private final float distanciaKm;
 
-    /** Pedidos que este repartidor debe entregar durante su recorrido. */
+    /** Pedidos que este repartidor retiró y entregó durante su recorrido. */
     private final List<Pedido> pedidosAsignados = new ArrayList<>();
+
+    /** Zona de carga compartida desde la que retira sus pedidos. */
+    private final ZonaDeCarga zonaDeCarga;
 
     /** Controlador que registra las entregas realizadas. */
     private final ControladorDeEnvios controlador;
@@ -75,12 +84,14 @@ public class Repartidor implements Runnable {
      * @param mochilaTermica      {@code true} si cuenta con mochila térmica
      * @param disponibleInmediato {@code true} si puede tomar un pedido de inmediato
      * @param distanciaKm         distancia al punto de retiro en kilómetros
+     * @param zonaDeCarga         zona de carga compartida desde la que retira pedidos
      * @param controlador         controlador donde se registran las entregas
      */
     public Repartidor(int idRepartidor, String nombre, String apellido, String telefono,
                       String direccion, String tipoVehiculo, float pesoMaximo,
                       boolean mochilaTermica, boolean disponibleInmediato, float distanciaKm,
-                      ControladorDeEnvios controlador) {
+                      ZonaDeCarga zonaDeCarga, ControladorDeEnvios controlador) {
+        this.zonaDeCarga = zonaDeCarga;
         this.controlador = controlador;
         this.idRepartidor = idRepartidor;
         this.nombre = nombre;
@@ -99,19 +110,9 @@ public class Repartidor implements Runnable {
         return idRepartidor;
     }
 
-    /** @param idRepartidor nuevo identificador del repartidor */
-    public void setIdRepartidor(int idRepartidor) {
-        this.idRepartidor = idRepartidor;
-    }
-
     /** @return el nombre del repartidor */
     public String getNombre() {
         return nombre;
-    }
-
-    /** @param nombre nuevo nombre del repartidor */
-    public void setNombre(String nombre) {
-        this.nombre = nombre;
     }
 
     /** @return el apellido del repartidor */
@@ -119,19 +120,9 @@ public class Repartidor implements Runnable {
         return apellido;
     }
 
-    /** @param apellido nuevo apellido del repartidor */
-    public void setApellido(String apellido) {
-        this.apellido = apellido;
-    }
-
     /** @return el teléfono de contacto */
     public String getTelefono() {
         return telefono;
-    }
-
-    /** @param telefono nuevo teléfono de contacto */
-    public void setTelefono(String telefono) {
-        this.telefono = telefono;
     }
 
     /** @return la dirección particular del repartidor */
@@ -139,19 +130,9 @@ public class Repartidor implements Runnable {
         return direccion;
     }
 
-    /** @param direccion nueva dirección particular */
-    public void setDireccion(String direccion) {
-        this.direccion = direccion;
-    }
-
     /** @return el vehículo utilizado para el reparto */
     public String getTipoVehiculo() {
         return tipoVehiculo;
-    }
-
-    /** @param tipoVehiculo nuevo vehículo utilizado para el reparto */
-    public void setTipoVehiculo(String tipoVehiculo) {
-        this.tipoVehiculo = tipoVehiculo;
     }
 
     /** @return la carga máxima en kilogramos */
@@ -159,19 +140,9 @@ public class Repartidor implements Runnable {
         return pesoMaximo;
     }
 
-    /** @param pesoMaximo nueva carga máxima en kilogramos */
-    public void setPesoMaximo(float pesoMaximo) {
-        this.pesoMaximo = pesoMaximo;
-    }
-
     /** @return {@code true} si cuenta con mochila térmica */
     public boolean isMochilaTermica() {
         return mochilaTermica;
-    }
-
-    /** @param mochilaTermica {@code true} si cuenta con mochila térmica */
-    public void setMochilaTermica(boolean mochilaTermica) {
-        this.mochilaTermica = mochilaTermica;
     }
 
     /** @return {@code true} si puede tomar un pedido de inmediato */
@@ -187,11 +158,6 @@ public class Repartidor implements Runnable {
     /** @return la distancia al punto de retiro en kilómetros */
     public float getDistanciaKm() {
         return distanciaKm;
-    }
-
-    /** @param distanciaKm nueva distancia al punto de retiro en kilómetros */
-    public void setDistanciaKm(float distanciaKm) {
-        this.distanciaKm = distanciaKm;
     }
 
     /** @return el nombre y el apellido del repartidor */
@@ -215,41 +181,50 @@ public class Repartidor implements Runnable {
     }
 
     /**
-     * Recorre los pedidos asignados y los entrega uno a uno. Este método es el
-     * que ejecuta el hilo del repartidor, en paralelo con los demás.
+     * Retira pedidos de la zona de carga y los entrega uno a uno, hasta que ya
+     * no quede ninguno que este repartidor pueda atender. Este método es el que
+     * ejecuta el hilo del repartidor, en paralelo con los demás.
      *
-     * <p>Si un pedido no puede entregarse, se informa el motivo y el recorrido
-     * continúa con el siguiente. Si el hilo es interrumpido, termina de forma
-     * controlada restaurando la marca de interrupción.</p>
+     * <p>Como la zona de carga es un recurso compartido, cada retiro se realiza
+     * dentro de un método sincronizado: así un mismo pedido nunca es tomado por
+     * dos repartidores. Si un pedido no puede entregarse, se informa el motivo
+     * y el recorrido continúa con el siguiente; si el hilo es interrumpido,
+     * termina de forma controlada restaurando la marca de interrupción.</p>
      */
     @Override
     public void run() {
-        if (pedidosAsignados.isEmpty()) {
-            System.out.printf("[Repartidor: %s] Sin pedidos asignados.%n", nombre);
+        Pedido pedido = zonaDeCarga.retirarPedido(this);
+
+        if (pedido == null) {
+            System.out.printf("[Repartidor - %s] No hay pedidos compatibles en la zona de carga.%n", nombre);
             return;
         }
 
-        for (Pedido pedido : pedidosAsignados) {
+        while (pedido != null) {
             try {
                 entregarPedido(pedido);
+                pedidosAsignados.add(pedido);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                System.out.printf("[Repartidor: %s] Recorrido interrumpido.%n", nombre);
+                System.out.printf("[Repartidor - %s] Recorrido interrumpido.%n", nombre);
                 return;
             } catch (EntregaException e) {
-                System.out.printf("[Repartidor: %s] No se pudo entregar el pedido %d: %s%n",
+                System.out.printf("[Repartidor - %s] No se pudo entregar el pedido #%d: %s%n",
                         nombre, pedido.getIdPedido(), e.getMessage());
             } catch (RuntimeException e) {
-                System.out.printf("[Repartidor: %s] Error inesperado en el pedido %d: %s%n",
+                System.out.printf("[Repartidor - %s] Error inesperado en el pedido #%d: %s%n",
                         nombre, pedido.getIdPedido(), e.getMessage());
             }
+            pedido = zonaDeCarga.retirarPedido(this);
         }
-        System.out.printf("[Repartidor: %s] Recorrido finalizado.%n", nombre);
+
+        System.out.printf("[Repartidor - %s] Recorrido finalizado: %d pedidos entregados.%n",
+                nombre, pedidosAsignados.size());
     }
 
     /**
-     * Entrega un pedido: lo despacha, simula el traslado con una pausa
-     * aleatoria y confirma la entrega en el controlador.
+     * Entrega un pedido ya retirado de la zona de carga: lo pone en reparto,
+     * simula el traslado con una pausa aleatoria y confirma la entrega.
      *
      * @param pedido pedido a entregar
      * @throws EntregaException     si el pedido no está en condiciones de ser despachado
@@ -263,16 +238,22 @@ public class Repartidor implements Runnable {
             throw new EntregaException("el pedido no tiene repartidor asignado");
         }
 
+        System.out.printf("[Repartidor - %s] Retirando pedido #%d... Destino: %s%n",
+                nombre, pedido.getIdPedido(), pedido.getDireccionEntrega());
+
         controlador.despachar(pedido);
-        System.out.printf("[Repartidor: %s] Entregando %s #%d... (%d min estimados)%n",
-                nombre, pedido.getTipoPedido(), pedido.getIdPedido(), pedido.calcularTiempoEntrega());
+        System.out.printf("[Repartidor - %s] Estado: %s%n", nombre, pedido.getEstado());
+
+        System.out.printf("[Repartidor - %s] Entregando pedido #%d... (%d min estimados)%n",
+                nombre, pedido.getIdPedido(), pedido.calcularTiempoEntrega());
 
         Thread.sleep(ESPERA_MINIMA_MS + random.nextInt(ESPERA_ALEATORIA_MS));
 
         if (!controlador.registrarEntrega(pedido)) {
             throw new EntregaException("no fue posible confirmar la entrega");
         }
-        System.out.printf("[Repartidor: %s] Pedido #%d entregado.%n", nombre, pedido.getIdPedido());
+        zonaDeCarga.confirmarEntrega();
+        System.out.printf("[Repartidor - %s] Estado: %s%n", nombre, pedido.getEstado());
     }
 
     /** @return representación textual breve del repartidor */

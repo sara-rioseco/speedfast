@@ -98,6 +98,40 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
         return estado;
     }
 
+    /**
+     * Actualiza directamente el estado del pedido. La vía recomendada son los
+     * métodos {@link #despachar()}, {@link #confirmarEntrega()} y
+     * {@link #cancelar()}, que validan la transición; este setter existe para
+     * casos puntuales de corrección manual.
+     *
+     * @param nuevoEstado nuevo estado del pedido
+     */
+    public synchronized void setEstado(EstadoPedido nuevoEstado) {
+        if (nuevoEstado == null) {
+            return;
+        }
+        this.estado = nuevoEstado;
+        registrarEvento("Estado actualizado a " + nuevoEstado.getDescripcion());
+    }
+
+    /**
+     * Sobrecarga que recibe el estado como texto y lo convierte al enumerado.
+     * Si el texto no corresponde a ningún estado válido, el pedido conserva su
+     * estado actual: usar el enum evita precisamente este tipo de errores.
+     *
+     * @param nuevoEstado nombre del estado, por ejemplo {@code "EN_REPARTO"}
+     * @return {@code true} si el texto correspondía a un estado válido
+     */
+    public synchronized boolean setEstado(String nuevoEstado) {
+        try {
+            setEstado(EstadoPedido.valueOf(nuevoEstado.trim().toUpperCase()));
+            return true;
+        } catch (IllegalArgumentException | NullPointerException e) {
+            System.out.printf("[Pedido %d] Estado no reconocido: %s%n", idPedido, nuevoEstado);
+            return false;
+        }
+    }
+
     /** @return el repartidor asignado, o {@code null} si aún no se asigna */
     public synchronized Repartidor getRepartidorAsignado() {
         return repartidorAsignado;
@@ -146,13 +180,13 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
         if (estado == EstadoPedido.CANCELADO) {
             return String.format("No se puede despachar el pedido %d: se encuentra cancelado.", idPedido);
         }
-        if (estado == EstadoPedido.DESPACHADO) {
-            return String.format("El pedido %d ya había sido despachado.", idPedido);
+        if (estado == EstadoPedido.EN_REPARTO) {
+            return String.format("El pedido %d ya se encuentra en reparto.", idPedido);
         }
         if (repartidorAsignado == null) {
             return String.format("No se puede despachar el pedido %d: aún no tiene repartidor asignado.", idPedido);
         }
-        estado = EstadoPedido.DESPACHADO;
+        estado = EstadoPedido.EN_REPARTO;
         registrarEvento("Pedido despachado con " + repartidorAsignado.getNombreCompleto());
         return String.format("Pedido %d despachado correctamente con %s (%d minutos estimados).",
                 idPedido, repartidorAsignado.getNombreCompleto(), calcularTiempoEntrega());
@@ -168,8 +202,8 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
         if (estado == EstadoPedido.ENTREGADO) {
             return String.format("No se puede cancelar el pedido %d: ya fue entregado.", idPedido);
         }
-        if (estado == EstadoPedido.DESPACHADO) {
-            return String.format("No se puede cancelar el pedido %d: ya fue despachado.", idPedido);
+        if (estado == EstadoPedido.EN_REPARTO) {
+            return String.format("No se puede cancelar el pedido %d: ya se encuentra en reparto.", idPedido);
         }
         if (estado == EstadoPedido.CANCELADO) {
             return String.format("El pedido %d ya se encontraba cancelado.", idPedido);
@@ -186,7 +220,7 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
      * @return {@code true} si el pedido pasó a estado entregado
      */
     public synchronized boolean confirmarEntrega() {
-        if (estado != EstadoPedido.DESPACHADO) {
+        if (estado != EstadoPedido.EN_REPARTO) {
             return false;
         }
         estado = EstadoPedido.ENTREGADO;

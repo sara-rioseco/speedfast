@@ -10,6 +10,7 @@ El proyecto se construye de forma incremental:
 * **Semana 2 — "Definiendo una clase abstracta y su jerarquía"**: `Pedido` se convierte en **clase abstracta**, se incorpora el atributo común `distanciaKm`, el método implementado `mostrarResumen()` y el método abstracto `calcularTiempoEntrega()`.
 * **Semana 3 — "Diseñando un sistema orientado a objetos con clases abstractas, polimorfismo e interfaces"**: se incorporan las interfaces `Despachable`, `Cancelable` y `Rastreable`, el estado del pedido, y la clase `ControladorDeEnvios`, que concentra la lógica de gestión sobre colecciones dinámicas (`ArrayList`).
 * **Semana 4 — "Ejecutando tareas en paralelo con hilos en Java"**: `Repartidor` implementa `Runnable` y cada repartidor pasa a ejecutarse como un hilo independiente que recorre su propia lista de pedidos. `Main` lanza a todos los repartidores en paralelo con `ExecutorService`, y el acceso al historial compartido se protege con `synchronized`.
+* **Semana 5 — "Sincronizando procesos en sistemas concurrentes"**: los pedidos dejan de repartirse de antemano y pasan a una `ZonaDeCarga` compartida, desde la cual los repartidores los retiran de a uno compitiendo entre sí. La sincronización garantiza que cada pedido sea retirado y entregado por un único repartidor, y un `MonitorEstado` audita el sistema en tiempo real.
 
 > El proyecto se mantiene como un único proyecto Maven en la raíz del repositorio: cada semana se construye sobre la anterior, y el avance semanal queda registrado en los commits en lugar de duplicar el código en carpetas separadas.
 
@@ -32,7 +33,8 @@ El sistema aplica los principios fundamentales de la Programación Orientada a O
 * **Colecciones dinámicas** — el controlador administra `ArrayList` de pedidos, repartidores e historial de entregas.
 * **Separación de responsabilidades** — la lógica de gestión vive en `ControladorDeEnvios`; `Main` solo simula y presenta resultados.
 * **Concurrencia** — `Repartidor` implementa `Runnable` y se ejecuta en paralelo mediante `ExecutorService`, con pausas aleatorias que simulan cada entrega.
-* **Sincronización** — los métodos que modifican estado compartido son `synchronized`, evitando condiciones de carrera sobre el historial de entregas.
+* **Recurso compartido** — la `ZonaDeCarga` es accedida simultáneamente por los tres hilos de repartidor; sus métodos `synchronized` garantizan que cada pedido sea retirado por un único repartidor.
+* **Sincronización** — `synchronized` protege las secciones críticas, `AtomicInteger` lleva los contadores sin bloqueo y `volatile` comunica la orden de detención al monitor.
 * **Manejo de excepciones** — `EntregaException` e `InterruptedException` se capturan por pedido, de modo que un fallo no detiene el recorrido completo.
 
 ---
@@ -49,14 +51,16 @@ speedfast/
 │   │   ├── PedidoComida.java          # Mochila térmica · 15 min + 2 min/km
 │   │   ├── PedidoEncomienda.java      # Peso y embalaje · 20 min + 1,5 min/km
 │   │   ├── PedidoExpress.java         # Cercanía y disponibilidad · 10 min (+5 si > 5 km)
-│   │   ├── Repartidor.java            # Implementa Runnable: entrega sus pedidos en un hilo
-│   │   ├── EstadoPedido.java          # Enum: pendiente, asignado, despachado, entregado, cancelado
+│   │   ├── Repartidor.java            # Implementa Runnable: retira y entrega pedidos en un hilo
+│   │   ├── EstadoPedido.java          # Enum: pendiente, asignado, en reparto, entregado, cancelado
 │   │   ├── Despachable.java           # Interfaz: despachar()
 │   │   ├── Cancelable.java            # Interfaz: cancelar()
 │   │   └── Rastreable.java            # Interfaz: verHistorial()
 │   ├── exception/
 │   │   └── EntregaException.java      # Error de dominio al entregar un pedido
 │   └── service/
+│       ├── ZonaDeCarga.java           # Recurso compartido: retiro sincronizado de pedidos
+│       ├── MonitorEstado.java         # Hilo que audita el sistema en tiempo real
 │       └── ControladorDeEnvios.java   # Lógica de gestión, colecciones y sincronización
 ├── pom.xml
 └── README.md
@@ -137,6 +141,24 @@ classDiagram
         +run() void
     }
 
+    class ZonaDeCarga {
+        -Queue~Pedido~ pedidosPendientes
+        -AtomicInteger pedidosEnReparto
+        -AtomicInteger pedidosEntregados
+        +agregarPedido(Pedido) void
+        +retirarPedido() Pedido
+        +retirarPedido(Repartidor) Pedido
+        +confirmarEntrega() void
+        +todoEntregado() boolean
+    }
+
+    class MonitorEstado {
+        -volatile boolean activo
+        +run() void
+        +informarEstado() void
+        +detener() void
+    }
+
     class Repartidor {
         -String nombre
         -float pesoMaximo
@@ -153,7 +175,7 @@ classDiagram
         <<enumeration>>
         PENDIENTE
         ASIGNADO
-        DESPACHADO
+        EN_REPARTO
         ENTREGADO
         CANCELADO
     }
@@ -167,6 +189,10 @@ classDiagram
     Rastreable <|.. Pedido
     Rastreable <|.. ControladorDeEnvios
     Runnable <|.. Repartidor
+    Runnable <|.. MonitorEstado
+    Repartidor --> ZonaDeCarga : retira pedidos
+    MonitorEstado --> ZonaDeCarga : audita
+    ZonaDeCarga o-- Pedido : pendientes
     Pedido <|-- PedidoComida
     Pedido <|-- PedidoEncomienda
     Pedido <|-- PedidoExpress
@@ -187,7 +213,9 @@ classDiagram
 * **`PedidoComida`** — agrega `restaurante` y `cantidadPlatos`. Solo acepta repartidores con **mochila térmica**.
 * **`PedidoEncomienda`** — agrega `pesoKg` y `tipoEmbalaje`. Valida la **capacidad de carga** del repartidor y que el **embalaje** esté declarado.
 * **`PedidoExpress`** — agrega `tienda` y `radioMaximoKm`. Exige **disponibilidad inmediata** y **cercanía** dentro del radio de cobertura.
-* **`Repartidor`** — datos del repartidor (`pesoMaximo`, `mochilaTermica`, `disponibleInmediato`, `distanciaKm`), que son los atributos que permiten validar cada tipo de pedido. Implementa `Runnable`: mantiene su lista de `pedidosAsignados` y su método `run()` los entrega uno a uno, simulando el traslado con pausas aleatorias.
+* **`Repartidor`** — datos del repartidor (`pesoMaximo`, `mochilaTermica`, `disponibleInmediato`, `distanciaKm`), que son los atributos que permiten validar cada tipo de pedido. Implementa `Runnable`: su método `run()` retira pedidos de la `ZonaDeCarga` mientras queden compatibles con su perfil, y los entrega simulando el traslado con pausas aleatorias.
+* **`ZonaDeCarga`** — recurso compartido donde llegan los pedidos. Sus métodos `agregarPedido()` y `retirarPedido()` son `synchronized`, lo que impide que dos repartidores retiren el mismo pedido. Lleva contadores `AtomicInteger` de pedidos en reparto y entregados.
+* **`MonitorEstado`** — hilo que informa periódicamente cuántos pedidos hay pendientes, en reparto y entregados. Consulta solo los contadores atómicos, por lo que audita el sistema sin interferir con el trabajo de los repartidores.
 * **`EstadoPedido`** — enumeración con los estados válidos de un pedido, evitando textos sueltos repartidos por el código.
 * **`EntregaException`** — excepción de dominio que permite informar por qué falló una entrega sin interrumpir el recorrido completo del repartidor.
 * **`ControladorDeEnvios`** — registra pedidos y repartidores, asigna, despacha, cancela y mantiene el historial de entregas. Sus métodos son `synchronized` porque varios hilos de repartidor lo utilizan al mismo tiempo.
@@ -230,19 +258,32 @@ Para asignar por nombre de forma efectiva se usa `ControladorDeEnvios.asignarRep
 
 ---
 
-## Concurrencia (Semana 4)
+## Concurrencia y sincronización (Semanas 4 y 5)
 
-Cada repartidor se ejecuta como un hilo independiente que recorre su propia lista de pedidos:
+En la Semana 4 cada repartidor recorría una lista de pedidos que se le asignaba de antemano, por lo que en la práctica no competía con nadie. En la Semana 5 los pedidos pasan a una **zona de carga común** y los repartidores los retiran de a uno: recién ahí aparece la competencia real por un recurso compartido, y con ella el riesgo de que dos repartidores tomen el mismo pedido.
 
-| Elemento | Uso en el proyecto |
+| Mecanismo | Uso en el proyecto |
 |---|---|
-| `Runnable` | `Repartidor` lo implementa; su método `run()` recorre `pedidosAsignados` y entrega uno a uno |
-| `Thread.sleep()` | Simula el traslado con una pausa aleatoria de entre 500 y 2000 ms por pedido |
+| `Runnable` | Lo implementan `Repartidor` (retira y entrega pedidos) y `MonitorEstado` (informa el avance) |
 | `ExecutorService` | `Main` usa `Executors.newFixedThreadPool(3)` para lanzar a los tres repartidores en paralelo |
-| `shutdown()` + `awaitTermination()` | La simulación continúa hasta que todos los repartidores terminan sus entregas |
-| `synchronized` | Protege el historial compartido en `ControladorDeEnvios` y las transiciones de estado de `Pedido` |
+| `shutdown()` + `awaitTermination()` | La simulación continúa hasta que todos los repartidores terminan sus recorridos |
+| `Thread.sleep()` | Simula el traslado con una pausa aleatoria de entre 500 y 2000 ms por pedido |
+| `synchronized` | Protege `agregarPedido()` y `retirarPedido()` en `ZonaDeCarga`, las transiciones de estado de `Pedido` y el historial de `ControladorDeEnvios` |
+| `AtomicInteger` | Contadores de pedidos en reparto y entregados, que el monitor consulta **sin tomar el bloqueo** |
+| `volatile` | Bandera `activo` del `MonitorEstado`: el hilo ve de inmediato la orden de detenerse |
 
-Como cada repartidor solo toca sus propios pedidos y el único recurso realmente compartido es el `ControladorDeEnvios`, basta con sincronizar sus métodos. Ninguno de ellos realiza pausas, por lo que los hilos nunca quedan bloqueados esperando a otro.
+### Por qué `retirarPedido()` es la sección crítica
+
+Sin sincronización, dos repartidores podrían consultar la cola en el mismo instante, ver el mismo pedido y retirarlo ambos: el pedido se entregaría dos veces. Al declarar el método `synchronized`, la consulta y la extracción ocurren de forma indivisible, de modo que el segundo repartidor solo entra cuando el primero ya retiró su pedido y este ya no está en la cola.
+
+Ninguno de los métodos sincronizados realiza pausas — el `Thread.sleep()` ocurre **fuera** del bloqueo, mientras el repartidor viaja — por lo que los hilos nunca quedan esperando unos por otros y la ejecución se mantiene realmente paralela.
+
+### Decisiones de diseño
+
+* Se usó `synchronized` en lugar de `ReentrantLock` porque la zona de carga solo necesita exclusión mutua simple; no requiere intentos con tiempo límite ni múltiples condiciones de espera, que son las ventajas que justificarían el lock explícito.
+* No se usó `Semaphore`: permitir que varios repartidores accedan a la vez a la zona de carga es precisamente el problema que se debe evitar, y un semáforo de un solo permiso equivaldría a `synchronized`.
+* Los contadores del monitor son `AtomicInteger` y no variables protegidas por el mismo bloqueo, para que auditar el sistema no frene a los repartidores.
+* Los atributos de `Repartidor` que definen su perfil (`pesoMaximo`, `mochilaTermica`, `tipoVehiculo`, `distanciaKm`, nombre e identificador) son `final` y ya no exponen setters. La zona de carga los consulta desde otro hilo al evaluar `cumpleRequisitos()`, de modo que un atributo inmutable garantiza que la decisión se tome siempre sobre datos estables. El único atributo mutable es `disponibleInmediato`, declarado `volatile` porque se escribe y se lee bajo bloqueos distintos.
 
 ### Manejo de excepciones
 
@@ -283,50 +324,63 @@ mvn exec:java -Dexec.mainClass="com.speedfast.app.Main"
 
 Desde IntelliJ IDEA: abrir el proyecto y ejecutar el método `main()` de la clase `Main` (paquete `com.speedfast.app`).
 
-Al ejecutar el programa, la consola muestra cinco secciones:
+Al ejecutar el programa, la consola muestra cuatro secciones:
 
-1. **Preparación** — se registran tres repartidores y siete pedidos, y se asignan según el perfil de cada repartidor (Juan tiene mochila térmica, Camila dispone de furgón y Luis se mueve en bicicleta dentro del radio de cobertura).
-2. **Simulación concurrente** — los tres repartidores entregan en paralelo; sus mensajes aparecen intercalados, lo que evidencia que los hilos se ejecutan simultáneamente.
-3. **Estado final** — tabla con el estado y el tiempo estimado de cada pedido.
-4. **Cancelación** — interfaz `Cancelable` sobre el pedido que quedó pendiente.
-5. **Historial** — interfaz `Rastreable`: las seis entregas realizadas por el sistema.
+1. **Zona de carga inicializada** — ingresan seis pedidos a la zona de carga común.
+2. **Repartidores trabajando en paralelo** — los tres repartidores retiran y entregan pedidos simultáneamente; sus mensajes aparecen intercalados junto con los informes del monitor, lo que evidencia la ejecución concurrente.
+3. **Estado final** — tabla con el estado de cada pedido y el repartidor que lo entregó.
+4. **Historial** — interfaz `Rastreable`: las entregas realizadas por el sistema, seguidas del mensaje de cierre.
 
 ### Ejemplo de salida
 
 ```text
 ==============================================================
-2. SIMULACIÓN CONCURRENTE DE ENTREGAS
+1. ZONA DE CARGA INICIALIZADA
 ==============================================================
-[Repartidor: Juan] Entregando Pedido de Comida #101... (23 min estimados)
-[Repartidor: Camila] Entregando Pedido de Encomienda #103... (29 min estimados)
-[Repartidor: Luis] Entregando Pedido Express #105... (15 min estimados)
-[Repartidor: Luis] Pedido #105 entregado.
-[Repartidor: Luis] Entregando Pedido Express #106... (10 min estimados)
-[Repartidor: Juan] Pedido #101 entregado.
-[Repartidor: Juan] Entregando Pedido de Comida #102... (27 min estimados)
-[Repartidor: Camila] Pedido #103 entregado.
-[Repartidor: Camila] Entregando Pedido de Encomienda #104... (34 min estimados)
-[Repartidor: Luis] Pedido #106 entregado.
-[Repartidor: Luis] Recorrido finalizado.
-[Repartidor: Juan] Pedido #102 entregado.
-[Repartidor: Juan] Recorrido finalizado.
-[Repartidor: Camila] Pedido #104 entregado.
-[Repartidor: Camila] Recorrido finalizado.
-
-[Sistema] Todos los repartidores finalizaron sus entregas.
+Pedido #101 agregado. Destino: Santiago Centro
+Pedido #102 agregado. Destino: Providencia
+Pedido #103 agregado. Destino: Ñuñoa
+Pedido #104 agregado. Destino: Recoleta
+Pedido #105 agregado. Destino: Las Condes
+Pedido #106 agregado. Destino: Providencia
 
 ==============================================================
-5. HISTORIAL DE ENTREGAS (Rastreable)
+2. REPARTIDORES TRABAJANDO EN PARALELO
 ==============================================================
- - Pedido de Comida #101 — entregado por Juan Pérez
- - Pedido Express #105 — entregado por Luis Díaz
- - Pedido de Encomienda #103 — entregado por Camila Soto
- - Pedido de Comida #102 — entregado por Juan Pérez
- - Pedido Express #106 — entregado por Luis Díaz
- - Pedido de Encomienda #104 — entregado por Camila Soto
+[Repartidor - Juan] Retirando pedido #101... Destino: Santiago Centro
+[Repartidor - Juan] Estado: EN_REPARTO
+[Repartidor - Juan] Entregando pedido #101... (23 min estimados)
+[Repartidor - Camila] Retirando pedido #102... Destino: Providencia
+[Repartidor - Camila] Estado: EN_REPARTO
+[Repartidor - Camila] Entregando pedido #102... (29 min estimados)
+[Repartidor - Pedro] Retirando pedido #103... Destino: Ñuñoa
+[Repartidor - Pedro] Estado: EN_REPARTO
+[Repartidor - Pedro] Entregando pedido #103... (10 min estimados)
+   [Monitor] Pendientes: 3 | En reparto: 3 | Entregados: 0 de 6
+[Repartidor - Camila] Estado: ENTREGADO
+[Repartidor - Camila] Retirando pedido #105... Destino: Las Condes
+...
+[Repartidor - Juan] Recorrido finalizado: 2 pedidos entregados.
+
+   [Monitor] Pendientes: 0 | En reparto: 0 | Entregados: 6 de 6
+
+==============================================================
+3. ESTADO FINAL DE LOS PEDIDOS
+==============================================================
+PEDIDO     DESTINO                  ESTADO           REPARTIDOR
+--------------------------------------------------------------
+#101       Santiago Centro          ENTREGADO        Juan Pérez
+#102       Providencia              ENTREGADO        Camila Soto
+#103       Ñuñoa                    ENTREGADO        Pedro Díaz
+#104       Recoleta                 ENTREGADO        Pedro Díaz
+#105       Las Condes               ENTREGADO        Camila Soto
+#106       Providencia              ENTREGADO        Juan Pérez
+--------------------------------------------------------------
+
+Todos los pedidos han sido entregados correctamente
 ```
 
-El orden de las líneas cambia en cada ejecución, ya que las pausas son aleatorias, pero siempre se completan las seis entregas.
+El orden de las líneas y el reparto de pedidos entre repartidores cambian en cada ejecución, ya que las pausas son aleatorias, pero siempre se completan las seis entregas y ningún pedido es retirado dos veces.
 
 ---
 

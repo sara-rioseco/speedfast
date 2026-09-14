@@ -12,8 +12,8 @@ public enum EstadoPedido {
     /** El pedido ya cuenta con un repartidor que cumple sus requisitos. */
     ASIGNADO("repartidor asignado"),
 
-    /** El pedido salió a reparto. */
-    DESPACHADO("despachado"),
+    /** El pedido fue retirado de la zona de carga y va en camino. */
+    EN_REPARTO("en reparto"),
 
     /** El pedido llegó a su destino. */
     ENTREGADO("entregado"),
