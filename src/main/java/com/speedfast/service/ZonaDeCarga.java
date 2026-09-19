@@ -5,6 +5,7 @@ import com.speedfast.model.Pedido;
 import com.speedfast.model.Repartidor;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
@@ -74,14 +75,22 @@ public class ZonaDeCarga {
      * condiciones de atender, según los requisitos propios de cada tipo de
      * pedido. Si ninguno le corresponde, no retira nada.
      *
+     * <p>La cola se recorre con un {@link Iterator} explícito y el pedido se
+     * extrae con {@link Iterator#remove()}: es la forma segura de quitar un
+     * elemento de una colección mientras se la recorre, y deja el método
+     * protegido frente a futuras modificaciones (por ejemplo, si se decidiera
+     * seguir recorriendo la cola en lugar de retornar de inmediato).</p>
+     *
      * @param repartidor repartidor que intenta retirar un pedido
      * @return el pedido retirado y ya asignado, o {@code null} si no hay uno compatible
      */
     public synchronized Pedido retirarPedido(Repartidor repartidor) {
-        for (Pedido pedido : pedidosPendientes) {
+        Iterator<Pedido> iterador = pedidosPendientes.iterator();
+        while (iterador.hasNext()) {
+            Pedido pedido = iterador.next();
             if (pedido.getEstado() == EstadoPedido.PENDIENTE
                     && pedido.cumpleRequisitos(repartidor)) {
-                pedidosPendientes.remove(pedido);
+                iterador.remove();
                 pedido.asignarRepartidor(repartidor);
                 pedidosEnReparto.incrementAndGet();
                 return pedido;

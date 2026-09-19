@@ -11,6 +11,7 @@ El proyecto se construye de forma incremental:
 * **Semana 3 — "Diseñando un sistema orientado a objetos con clases abstractas, polimorfismo e interfaces"**: se incorporan las interfaces `Despachable`, `Cancelable` y `Rastreable`, el estado del pedido, y la clase `ControladorDeEnvios`, que concentra la lógica de gestión sobre colecciones dinámicas (`ArrayList`).
 * **Semana 4 — "Ejecutando tareas en paralelo con hilos en Java"**: `Repartidor` implementa `Runnable` y cada repartidor pasa a ejecutarse como un hilo independiente que recorre su propia lista de pedidos. `Main` lanza a todos los repartidores en paralelo con `ExecutorService`, y el acceso al historial compartido se protege con `synchronized`.
 * **Semana 5 — "Sincronizando procesos en sistemas concurrentes"**: los pedidos dejan de repartirse de antemano y pasan a una `ZonaDeCarga` compartida, desde la cual los repartidores los retiran de a uno compitiendo entre sí. La sincronización garantiza que cada pedido sea retirado y entregado por un único repartidor, y un `MonitorEstado` audita el sistema en tiempo real.
+* **Semana 6 — "Diseñando interfaces gráficas para aplicaciones en Java"**: el sistema incorpora una interfaz de escritorio construida con **Java Swing**. Desde una `VentanaPrincipal` se abre un formulario para registrar pedidos con validación de campos, un listado de pedidos en `JTable`, y se inician las entregas concurrentes sin bloquear el hilo gráfico.
 
 > El proyecto se mantiene como un único proyecto Maven en la raíz del repositorio: cada semana se construye sobre la anterior, y el avance semanal queda registrado en los commits en lugar de duplicar el código en carpetas separadas.
 
@@ -24,18 +25,18 @@ El sistema aplica los principios fundamentales de la Programación Orientada a O
 
 * **Abstracción** — `Pedido` es una clase abstracta: reúne lo común a todo pedido y no puede instanciarse por sí sola, ya que un "pedido genérico" no existe en el dominio.
 * **Encapsulamiento** — todos los atributos son `private` y se acceden mediante getters y setters públicos. El estado del pedido solo cambia a través de sus propias operaciones.
-* **Herencia** — jerarquía `Pedido → PedidoComida / PedidoEncomienda / PedidoExpress`, donde la clase base concentra los atributos y el comportamiento común.
+* **Herencia** — jerarquía `Pedido → PedidoComida / PedidoEncomienda / PedidoExpress`, donde la clase base concentra los atributos y el comportamiento común. Cada ventana de la interfaz hereda de `JFrame`.
 * **Métodos abstractos** — `calcularTiempoEntrega()` y `cumpleRequisitos()` se declaran sin cuerpo en la clase base y obligan a cada subclase a definir su propia regla.
 * **Sobrescritura (*overriding*)** — cada subclase redefine `asignarRepartidor()`, `calcularTiempoEntrega()` y `cumpleRequisitos()` con `@Override`.
 * **Sobrecarga (*overloading*)** — el método `asignarRepartidor()` existe en tres firmas distintas: sin parámetros, con el nombre del repartidor (`String`) y con el objeto `Repartidor` completo.
 * **Interfaces** — `Despachable`, `Cancelable` y `Rastreable` desacoplan las operaciones de despacho, cancelación y seguimiento de la jerarquía de pedidos.
-* **Polimorfismo** — el `ControladorDeEnvios` trabaja con referencias `Pedido` y con listas `List<Pedido>`, sin conocer el tipo concreto de cada objeto.
+* **Polimorfismo** — el `ControladorDeEnvios` trabaja con referencias `Pedido` y con listas `List<Pedido>`, sin conocer el tipo concreto de cada objeto. El formulario crea un `PedidoComida`, `PedidoEncomienda` o `PedidoExpress` según el tipo elegido, y el controlador lo registra simplemente como `Pedido`.
 * **Colecciones dinámicas** — el controlador administra `ArrayList` de pedidos, repartidores e historial de entregas.
-* **Separación de responsabilidades** — la lógica de gestión vive en `ControladorDeEnvios`; `Main` solo simula y presenta resultados.
+* **Separación de responsabilidades (MVC)** — el modelo no conoce la interfaz; las ventanas solo disparan operaciones del `ControladorDeEnvios` y muestran sus datos; `Main` solo arma el sistema y abre la ventana principal.
 * **Concurrencia** — `Repartidor` implementa `Runnable` y se ejecuta en paralelo mediante `ExecutorService`, con pausas aleatorias que simulan cada entrega.
 * **Recurso compartido** — la `ZonaDeCarga` es accedida simultáneamente por los tres hilos de repartidor; sus métodos `synchronized` garantizan que cada pedido sea retirado por un único repartidor.
 * **Sincronización** — `synchronized` protege las secciones críticas, `AtomicInteger` lleva los contadores sin bloqueo y `volatile` comunica la orden de detención al monitor.
-* **Manejo de excepciones** — `EntregaException` e `InterruptedException` se capturan por pedido, de modo que un fallo no detiene el recorrido completo.
+* **Manejo de excepciones** — `EntregaException` e `InterruptedException` se capturan por pedido, de modo que un fallo no detiene el recorrido completo. En la interfaz, los datos inválidos se informan con `JOptionPane` sin cerrar el formulario.
 
 ---
 
@@ -44,24 +45,30 @@ El sistema aplica los principios fundamentales de la Programación Orientada a O
 ```text
 speedfast/
 ├── src/main/java/com/speedfast/
-│   ├── app/
-│   │   └── Main.java                  # Simulación completa del sistema
+│   ├── main/
+│   │   └── Main.java                   # Arma el sistema y abre la ventana principal
 │   ├── model/
-│   │   ├── Pedido.java                # Clase abstracta; implementa las 3 interfaces
-│   │   ├── PedidoComida.java          # Mochila térmica · 15 min + 2 min/km
-│   │   ├── PedidoEncomienda.java      # Peso y embalaje · 20 min + 1,5 min/km
-│   │   ├── PedidoExpress.java         # Cercanía y disponibilidad · 10 min (+5 si > 5 km)
-│   │   ├── Repartidor.java            # Implementa Runnable: retira y entrega pedidos en un hilo
-│   │   ├── EstadoPedido.java          # Enum: pendiente, asignado, en reparto, entregado, cancelado
-│   │   ├── Despachable.java           # Interfaz: despachar()
-│   │   ├── Cancelable.java            # Interfaz: cancelar()
-│   │   └── Rastreable.java            # Interfaz: verHistorial()
+│   │   ├── Pedido.java                 # Clase abstracta; implementa las 3 interfaces
+│   │   ├── PedidoComida.java           # Mochila térmica · 15 min + 2 min/km
+│   │   ├── PedidoEncomienda.java       # Peso y embalaje · 20 min + 1,5 min/km
+│   │   ├── PedidoExpress.java          # Cercanía y disponibilidad · 10 min (+5 si > 5 km)
+│   │   ├── Repartidor.java             # Implementa Runnable: retira y entrega pedidos en un hilo
+│   │   ├── EstadoPedido.java           # Enum: pendiente, asignado, en reparto, entregado, cancelado
+│   │   ├── Despachable.java            # Interfaz: despachar()
+│   │   ├── Cancelable.java             # Interfaz: cancelar()
+│   │   └── Rastreable.java             # Interfaz: verHistorial()
 │   ├── exception/
-│   │   └── EntregaException.java      # Error de dominio al entregar un pedido
-│   └── service/
-│       ├── ZonaDeCarga.java           # Recurso compartido: retiro sincronizado de pedidos
-│       ├── MonitorEstado.java         # Hilo que audita el sistema en tiempo real
-│       └── ControladorDeEnvios.java   # Lógica de gestión, colecciones y sincronización
+│   │   └── EntregaException.java       # Error de dominio al entregar un pedido
+│   ├── service/
+│   │   ├── ControladorDeEnvios.java    # Controlador compartido por todas las ventanas
+│   │   ├── ZonaDeCarga.java            # Recurso compartido: retiro sincronizado de pedidos
+│   │   ├── SimuladorEntregas.java      # Ciclo de vida de los hilos de cada ronda de entregas
+│   │   └── MonitorEstado.java          # Hilo que audita el sistema en tiempo real
+│   └── view/
+│       ├── VentanaPrincipal.java       # Botones de navegación e inicio de entregas
+│       ├── VentanaRegistroPedido.java  # Formulario de registro con validación de campos
+│       └── VentanaListaPedidos.java    # Listado de pedidos en JTable con DefaultTableModel
+├── src/main/resources/images/          # Evidencias de ejecución
 ├── pom.xml
 └── README.md
 ```
@@ -69,6 +76,8 @@ speedfast/
 ---
 
 ## Diagrama de clases
+
+### Dominio y servicios
 
 ```mermaid
 classDiagram
@@ -125,7 +134,10 @@ classDiagram
         -List~Pedido~ pedidos
         -List~Repartidor~ repartidores
         -List~String~ historialEntregas
+        -ZonaDeCarga zonaDeCarga
         +registrarPedido(Pedido) void
+        +buscarPedidoPorId(int) Pedido
+        +contarPedidos(EstadoPedido) int
         +asignarPedidoA(Pedido, Repartidor) String
         +asignarRepartidor(Pedido, String) String
         +buscarRepartidorPorNombre(String) Repartidor
@@ -150,6 +162,12 @@ classDiagram
         +retirarPedido(Repartidor) Pedido
         +confirmarEntrega() void
         +todoEntregado() boolean
+    }
+
+    class SimuladorEntregas {
+        -ZonaDeCarga zonaDeCarga
+        -List~Repartidor~ repartidores
+        +ejecutarEntregas() void
     }
 
     class MonitorEstado {
@@ -193,6 +211,9 @@ classDiagram
     Repartidor --> ZonaDeCarga : retira pedidos
     MonitorEstado --> ZonaDeCarga : audita
     ZonaDeCarga o-- Pedido : pendientes
+    ControladorDeEnvios --> ZonaDeCarga : deja pedidos
+    SimuladorEntregas --> Repartidor : ejecuta en paralelo
+    SimuladorEntregas --> MonitorEstado : ejecuta
     Pedido <|-- PedidoComida
     Pedido <|-- PedidoEncomienda
     Pedido <|-- PedidoExpress
@@ -203,6 +224,39 @@ classDiagram
     Repartidor --> ControladorDeEnvios : registra entregas
     ControladorDeEnvios o-- Pedido
     ControladorDeEnvios o-- Repartidor
+```
+
+### Interfaz gráfica
+
+```mermaid
+classDiagram
+    class JFrame {
+        <<Swing>>
+    }
+    class VentanaPrincipal {
+        +VentanaPrincipal(ControladorDeEnvios, SimuladorEntregas)
+        -iniciarEntregas() void
+    }
+    class VentanaRegistroPedido {
+        -JTextField txtId
+        -JTextField txtDireccion
+        -JComboBox cmbTipo
+        -guardarPedido() void
+        -crearPedido(int, String, String) Pedido
+    }
+    class VentanaListaPedidos {
+        -DefaultTableModel modelo
+        -refrescarTabla() void
+    }
+
+    JFrame <|-- VentanaPrincipal
+    JFrame <|-- VentanaRegistroPedido
+    JFrame <|-- VentanaListaPedidos
+    VentanaPrincipal --> VentanaRegistroPedido : abre
+    VentanaPrincipal --> VentanaListaPedidos : abre
+    VentanaPrincipal --> SimuladorEntregas : inicia entregas (SwingWorker)
+    VentanaRegistroPedido --> ControladorDeEnvios : registra pedidos
+    VentanaListaPedidos --> ControladorDeEnvios : consulta pedidos
 ```
 
 ---
@@ -216,9 +270,11 @@ classDiagram
 * **`Repartidor`** — datos del repartidor (`pesoMaximo`, `mochilaTermica`, `disponibleInmediato`, `distanciaKm`), que son los atributos que permiten validar cada tipo de pedido. Implementa `Runnable`: su método `run()` retira pedidos de la `ZonaDeCarga` mientras queden compatibles con su perfil, y los entrega simulando el traslado con pausas aleatorias.
 * **`ZonaDeCarga`** — recurso compartido donde llegan los pedidos. Sus métodos `agregarPedido()` y `retirarPedido()` son `synchronized`, lo que impide que dos repartidores retiren el mismo pedido. Lleva contadores `AtomicInteger` de pedidos en reparto y entregados.
 * **`MonitorEstado`** — hilo que informa periódicamente cuántos pedidos hay pendientes, en reparto y entregados. Consulta solo los contadores atómicos, por lo que audita el sistema sin interferir con el trabajo de los repartidores.
+* **`SimuladorEntregas`** — ejecuta una ronda de entregas: lanza a los repartidores con `ExecutorService` y al monitor en su propio hilo, espera el término de todos y cierra el monitor con `join()`.
 * **`EstadoPedido`** — enumeración con los estados válidos de un pedido, evitando textos sueltos repartidos por el código.
 * **`EntregaException`** — excepción de dominio que permite informar por qué falló una entrega sin interrumpir el recorrido completo del repartidor.
-* **`ControladorDeEnvios`** — registra pedidos y repartidores, asigna, despacha, cancela y mantiene el historial de entregas. Sus métodos son `synchronized` porque varios hilos de repartidor lo utilizan al mismo tiempo.
+* **`ControladorDeEnvios`** — registra pedidos y repartidores, asigna, despacha, cancela y mantiene el historial de entregas. Es el controlador que comparten todas las ventanas: al registrar un pedido rechaza IDs repetidos y lo deja en la zona de carga. Sus métodos son `synchronized` porque varios hilos de repartidor lo utilizan al mismo tiempo.
+* **Ventanas (`view`)** — `VentanaPrincipal`, `VentanaRegistroPedido` y `VentanaListaPedidos`, descritas en la sección [Interfaz gráfica](#interfaz-gráfica-semana-6).
 
 ### Interfaces implementadas
 
@@ -258,6 +314,55 @@ Para asignar por nombre de forma efectiva se usa `ControladorDeEnvios.asignarRep
 
 ---
 
+## Interfaz gráfica (Semana 6)
+
+### Organización en capas (MVC)
+
+Los paquetes de las capas conservan los nombres en inglés usados desde la Semana 1, y el punto de entrada está en el paquete `main`, como indican las instrucciones. Cada uno cumple un rol del patrón Modelo–Vista–Controlador:
+
+| Capa | Paquete | Contenido |
+|---|---|---|
+| Modelo | `model` | `Pedido` y sus subclases, `Repartidor`, `EstadoPedido` e interfaces del dominio |
+| Vista | `view` | `VentanaPrincipal`, `VentanaRegistroPedido`, `VentanaListaPedidos` |
+| Controlador | `service` | `ControladorDeEnvios`, apoyado por `ZonaDeCarga`, `SimuladorEntregas` y `MonitorEstado` |
+| Punto de entrada | `main` | `Main`, que arma el sistema y abre `new VentanaPrincipal(...)` |
+
+El modelo no importa ninguna clase de Swing: las ventanas usan el controlador para registrar y consultar pedidos, y el simulador para iniciar las entregas.
+
+### Ventanas
+
+| Ventana | Componentes | Función |
+|---|---|---|
+| `VentanaPrincipal` | `BorderLayout` con un título y tres `JButton` en `GridLayout` | Abrir las demás ventanas e iniciar las entregas |
+| `VentanaRegistroPedido` | `JTextField` para ID y dirección, `JComboBox` para el tipo (comida, encomienda, express), botón **Guardar** | Validar los datos, crear el pedido, agregarlo al controlador y confirmar con `JOptionPane` |
+| `VentanaListaPedidos` | `JTable` con `DefaultTableModel`, botón **Refrescar** | Mostrar todos los pedidos con su ID, tipo, dirección, estado y repartidor |
+
+Cada botón de la ventana principal abre una ventana nueva, y todas reciben la misma instancia de `ControladorDeEnvios`: un pedido registrado en el formulario aparece en el listado al abrirlo o al presionar **Refrescar**.
+
+El botón **Asignar repartidor / Iniciar entrega** lanza a los tres repartidores en paralelo. Cada uno retira de la zona de carga los pedidos pendientes que cumplen con su perfil, que quedan así asignados a él, y los entrega. Al terminar se informa cuántos pedidos fueron entregados, y el listado muestra qué repartidor atendió cada uno.
+
+### Validación del formulario de registro
+
+| Campo | Regla |
+|---|---|
+| ID | Obligatorio, número entero mayor que cero y no repetido |
+| Dirección | Obligatoria |
+| Tipo | Se elige de una lista, por lo que siempre es válido |
+
+Si un dato no es válido se informa el motivo con `JOptionPane` y el pedido no se guarda. El ID repetido lo detecta el propio `ControladorDeEnvios`, de modo que la regla se cumple aunque el pedido llegue por otra vía.
+
+El formulario solicita solo los datos indicados en las instrucciones. Los demás datos que exige cada subclase (distancia, peso, tienda, etc.) se completan con valores estándar, definidos como constantes en `VentanaRegistroPedido` y elegidos de modo que cualquier pedido registrado pueda ser atendido por al menos un repartidor.
+
+### Hilo gráfico y concurrencia
+
+Swing ejecuta todo el dibujo y los eventos en un único hilo, el *Event Dispatch Thread* (EDT). Si ese hilo esperara a que los repartidores terminen, la ventana quedaría congelada durante toda la ronda. Por eso:
+
+* `Main` crea la ventana principal dentro de `SwingUtilities.invokeLater()`.
+* El botón de entregas ejecuta `SimuladorEntregas.ejecutarEntregas()` dentro de un `SwingWorker`, es decir, en un hilo de fondo. Mientras dura la ronda el botón queda deshabilitado; las demás ventanas siguen funcionando, y el listado puede refrescarse para ver el avance.
+* Al terminar, `done()` vuelve al EDT para habilitar el botón y mostrar el resultado.
+
+---
+
 ## Concurrencia y sincronización (Semanas 4 y 5)
 
 En la Semana 4 cada repartidor recorría una lista de pedidos que se le asignaba de antemano, por lo que en la práctica no competía con nadie. En la Semana 5 los pedidos pasan a una **zona de carga común** y los repartidores los retiran de a uno: recién ahí aparece la competencia real por un recurso compartido, y con ella el riesgo de que dos repartidores tomen el mismo pedido.
@@ -265,18 +370,28 @@ En la Semana 4 cada repartidor recorría una lista de pedidos que se le asignaba
 | Mecanismo | Uso en el proyecto |
 |---|---|
 | `Runnable` | Lo implementan `Repartidor` (retira y entrega pedidos) y `MonitorEstado` (informa el avance) |
-| `ExecutorService` | `Main` usa `Executors.newFixedThreadPool(3)` para lanzar a los tres repartidores en paralelo |
-| `shutdown()` + `awaitTermination()` | La simulación continúa hasta que todos los repartidores terminan sus recorridos |
+| `ExecutorService` | `SimuladorEntregas` usa `Executors.newFixedThreadPool()` para lanzar a los tres repartidores en paralelo |
+| `shutdown()` + `awaitTermination()` | La ronda continúa hasta que todos los repartidores terminan sus recorridos |
+| `join()` | Tras detener al monitor, se espera explícitamente el término de su hilo |
 | `Thread.sleep()` | Simula el traslado con una pausa aleatoria de entre 500 y 2000 ms por pedido |
 | `synchronized` | Protege `agregarPedido()` y `retirarPedido()` en `ZonaDeCarga`, las transiciones de estado de `Pedido` y el historial de `ControladorDeEnvios` |
 | `AtomicInteger` | Contadores de pedidos en reparto y entregados, que el monitor consulta **sin tomar el bloqueo** |
 | `volatile` | Bandera `activo` del `MonitorEstado`: el hilo ve de inmediato la orden de detenerse |
+| `SwingWorker` | Ejecuta la ronda de entregas fuera del hilo gráfico (Semana 6) |
 
 ### Por qué `retirarPedido()` es la sección crítica
 
 Sin sincronización, dos repartidores podrían consultar la cola en el mismo instante, ver el mismo pedido y retirarlo ambos: el pedido se entregaría dos veces. Al declarar el método `synchronized`, la consulta y la extracción ocurren de forma indivisible, de modo que el segundo repartidor solo entra cuando el primero ya retiró su pedido y este ya no está en la cola.
 
+La cola se recorre con un `Iterator` explícito y el pedido se extrae con `iterator.remove()`, la forma segura de quitar un elemento de una colección mientras se la recorre.
+
 Ninguno de los métodos sincronizados realiza pausas — el `Thread.sleep()` ocurre **fuera** del bloqueo, mientras el repartidor viaja — por lo que los hilos nunca quedan esperando unos por otros y la ejecución se mantiene realmente paralela.
+
+### Mejoras aplicadas a partir de la retroalimentación de la Semana 5
+
+* `retirarPedido(Repartidor)` usaba un *for-each* y eliminaba el pedido con `Queue.remove()`. Ahora usa `Iterator` e `iterator.remove()`, lo que deja la intención explícita y protege el método frente a futuras modificaciones.
+* Después de `monitor.detener()` se espera el término del hilo del monitor con `join()`. Aunque el hilo es *daemon* y la bandera `volatile` ya detenía su ciclo, así ningún hilo creado por la aplicación queda activo al cerrar una ronda.
+* Tal como se proyectaba en el *feedforward*, `Pedido`, `ZonaDeCarga` y `ControladorDeEnvios` siguen siendo independientes de la presentación: la interfaz solo dispara operaciones y muestra sus resultados, sin bloquear el hilo gráfico.
 
 ### Decisiones de diseño
 
@@ -284,6 +399,7 @@ Ninguno de los métodos sincronizados realiza pausas — el `Thread.sleep()` ocu
 * No se usó `Semaphore`: permitir que varios repartidores accedan a la vez a la zona de carga es precisamente el problema que se debe evitar, y un semáforo de un solo permiso equivaldría a `synchronized`.
 * Los contadores del monitor son `AtomicInteger` y no variables protegidas por el mismo bloqueo, para que auditar el sistema no frene a los repartidores.
 * Los atributos de `Repartidor` que definen su perfil (`pesoMaximo`, `mochilaTermica`, `tipoVehiculo`, `distanciaKm`, nombre e identificador) son `final` y ya no exponen setters. La zona de carga los consulta desde otro hilo al evaluar `cumpleRequisitos()`, de modo que un atributo inmutable garantiza que la decisión se tome siempre sobre datos estables. El único atributo mutable es `disponibleInmediato`, declarado `volatile` porque se escribe y se lee bajo bloqueos distintos.
+* El ciclo de vida de los hilos pasó de `Main` a `SimuladorEntregas`, para que las entregas puedan iniciarse desde la interfaz tantas veces como se necesite. Por eso cada repartidor informa al final solo los pedidos entregados en el recorrido actual.
 
 ### Manejo de excepciones
 
@@ -292,16 +408,18 @@ Ninguno de los métodos sincronizados realiza pausas — el `Thread.sleep()` ocu
 | `Thread.sleep()` durante una entrega | Se captura `InterruptedException`, se restaura la marca de interrupción y el repartidor termina de forma controlada |
 | Pedido que no puede entregarse | Se lanza `EntregaException` y se captura por pedido: el repartidor informa el motivo y continúa con el siguiente |
 | Error inesperado dentro del hilo | Un `catch (RuntimeException)` evita que el hilo muera en silencio, ya que `execute()` no propaga las excepciones |
-| `awaitTermination()` en `Main` | Se captura `InterruptedException`, se llama a `shutdownNow()` y se restaura la interrupción |
+| `awaitTermination()` y `join()` | Se captura `InterruptedException`, se llama a `shutdownNow()` y se restaura la interrupción |
 | Repartidor sin pedidos | Se informa por consola en lugar de tratarse como error |
+| Dato inválido en el formulario | Se informa con `JOptionPane` y el pedido no se guarda |
+| Error durante una ronda iniciada desde la interfaz | `SwingWorker.get()` lo entrega como `ExecutionException` y se informa con `JOptionPane` |
 
 ---
 
 ## Aporte del diseño a la escalabilidad, reutilización y mantenibilidad
 
-* **Escalabilidad** — agregar un nuevo tipo de servicio (por ejemplo, `PedidoFarmacia`) solo requiere crear una subclase de `Pedido` e implementar sus dos métodos abstractos. Ni `ControladorDeEnvios` ni `Main` necesitan modificarse, porque ambos trabajan con referencias `Pedido`.
+* **Escalabilidad** — agregar un nuevo tipo de servicio (por ejemplo, `PedidoFarmacia`) solo requiere crear una subclase de `Pedido` e implementar sus dos métodos abstractos; en la interfaz basta con sumar una opción al `JComboBox` y su caso en `crearPedido()`. `ControladorDeEnvios` no necesita modificarse, porque trabaja con referencias `Pedido`.
 * **Reutilización** — el estado, el historial, el despacho, la cancelación y `mostrarResumen()` se escriben una sola vez en la clase abstracta y quedan disponibles para las tres subclases. `encabezado()` evita repetir el formato de los mensajes.
-* **Mantenibilidad** — cada regla de negocio vive en un solo lugar: las fórmulas de tiempo y los requisitos de asignación están en su subclase, la disponibilidad de repartidores en el controlador, y los estados válidos en el enum `EstadoPedido`. Las interfaces permiten que otras clases usen las operaciones sin depender de la jerarquía concreta.
+* **Mantenibilidad** — cada regla de negocio vive en un solo lugar: las fórmulas de tiempo y los requisitos de asignación están en su subclase, la disponibilidad de repartidores en el controlador, y los estados válidos en el enum `EstadoPedido`. Las interfaces permiten que otras clases usen las operaciones sin depender de la jerarquía concreta, y la interfaz gráfica puede cambiar sin tocar el modelo.
 
 ---
 
@@ -319,68 +437,35 @@ Ninguno de los métodos sincronizados realiza pausas — el `Thread.sleep()` ocu
 git clone https://github.com/sara-rioseco/speedfast.git
 cd speedfast
 mvn compile
-mvn exec:java -Dexec.mainClass="com.speedfast.app.Main"
+mvn exec:java -Dexec.mainClass="com.speedfast.main.Main"
 ```
 
-Desde IntelliJ IDEA: abrir el proyecto y ejecutar el método `main()` de la clase `Main` (paquete `com.speedfast.app`).
+Desde IntelliJ IDEA: abrir el proyecto y ejecutar el método `main()` de la clase `Main` (paquete `com.speedfast.main`).
 
-Al ejecutar el programa, la consola muestra cuatro secciones:
+### Uso de la aplicación
 
-1. **Zona de carga inicializada** — ingresan seis pedidos a la zona de carga común.
-2. **Repartidores trabajando en paralelo** — los tres repartidores retiran y entregan pedidos simultáneamente; sus mensajes aparecen intercalados junto con los informes del monitor, lo que evidencia la ejecución concurrente.
-3. **Estado final** — tabla con el estado de cada pedido y el repartidor que lo entregó.
-4. **Historial** — interfaz `Rastreable`: las entregas realizadas por el sistema, seguidas del mensaje de cierre.
-
-### Ejemplo de salida
+1. Al iniciar se abre la **ventana principal**. El sistema parte con seis pedidos de ejemplo y tres repartidores: Juan (motocicleta, con mochila térmica), Camila (furgón, 50 kg de carga) y Pedro (bicicleta, con mochila térmica).
+2. **Registrar pedido** abre el formulario. Al presionar **Guardar** se validan los datos: si hay un error se informa el motivo; si todo es correcto se confirma el registro.
+3. **Listar pedidos** muestra todos los pedidos en una tabla; el botón **Refrescar** la vuelve a cargar.
+4. **Asignar repartidor / Iniciar entrega** lanza a los repartidores en paralelo. Al terminar se informa cuántos pedidos fueron entregados, y el listado muestra el repartidor que atendió cada uno.
+5. La consola sigue mostrando los mensajes de los repartidores y del monitor, que evidencian la ejecución concurrente:
 
 ```text
-==============================================================
-1. ZONA DE CARGA INICIALIZADA
-==============================================================
 Pedido #101 agregado. Destino: Santiago Centro
-Pedido #102 agregado. Destino: Providencia
-Pedido #103 agregado. Destino: Ñuñoa
-Pedido #104 agregado. Destino: Recoleta
-Pedido #105 agregado. Destino: Las Condes
-Pedido #106 agregado. Destino: Providencia
-
-==============================================================
-2. REPARTIDORES TRABAJANDO EN PARALELO
-==============================================================
+...
 [Repartidor - Juan] Retirando pedido #101... Destino: Santiago Centro
 [Repartidor - Juan] Estado: EN_REPARTO
 [Repartidor - Juan] Entregando pedido #101... (23 min estimados)
 [Repartidor - Camila] Retirando pedido #102... Destino: Providencia
-[Repartidor - Camila] Estado: EN_REPARTO
-[Repartidor - Camila] Entregando pedido #102... (29 min estimados)
 [Repartidor - Pedro] Retirando pedido #103... Destino: Ñuñoa
-[Repartidor - Pedro] Estado: EN_REPARTO
-[Repartidor - Pedro] Entregando pedido #103... (10 min estimados)
    [Monitor] Pendientes: 3 | En reparto: 3 | Entregados: 0 de 6
 [Repartidor - Camila] Estado: ENTREGADO
-[Repartidor - Camila] Retirando pedido #105... Destino: Las Condes
 ...
 [Repartidor - Juan] Recorrido finalizado: 2 pedidos entregados.
-
    [Monitor] Pendientes: 0 | En reparto: 0 | Entregados: 6 de 6
-
-==============================================================
-3. ESTADO FINAL DE LOS PEDIDOS
-==============================================================
-PEDIDO     DESTINO                  ESTADO           REPARTIDOR
---------------------------------------------------------------
-#101       Santiago Centro          ENTREGADO        Juan Pérez
-#102       Providencia              ENTREGADO        Camila Soto
-#103       Ñuñoa                    ENTREGADO        Pedro Díaz
-#104       Recoleta                 ENTREGADO        Pedro Díaz
-#105       Las Condes               ENTREGADO        Camila Soto
-#106       Providencia              ENTREGADO        Juan Pérez
---------------------------------------------------------------
-
-Todos los pedidos han sido entregados correctamente
 ```
 
-El orden de las líneas y el reparto de pedidos entre repartidores cambian en cada ejecución, ya que las pausas son aleatorias, pero siempre se completan las seis entregas y ningún pedido es retirado dos veces.
+El orden de las líneas y el reparto de pedidos entre repartidores cambian en cada ronda, ya que las pausas son aleatorias, pero ningún pedido es retirado dos veces.
 
 ---
 

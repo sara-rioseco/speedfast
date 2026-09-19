@@ -190,9 +190,14 @@ public class Repartidor implements Runnable {
      * dos repartidores. Si un pedido no puede entregarse, se informa el motivo
      * y el recorrido continúa con el siguiente; si el hilo es interrumpido,
      * termina de forma controlada restaurando la marca de interrupción.</p>
+     *
+     * <p>Un mismo repartidor puede ejecutar varios recorridos (uno cada vez que
+     * se inician las entregas desde la interfaz), por lo que el total
+     * informado al final corresponde solo al recorrido actual.</p>
      */
     @Override
     public void run() {
+        int entregadosEnRecorrido = 0;
         Pedido pedido = zonaDeCarga.retirarPedido(this);
 
         if (pedido == null) {
@@ -204,6 +209,7 @@ public class Repartidor implements Runnable {
             try {
                 entregarPedido(pedido);
                 pedidosAsignados.add(pedido);
+                entregadosEnRecorrido++;
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 System.out.printf("[Repartidor - %s] Recorrido interrumpido.%n", nombre);
@@ -219,7 +225,7 @@ public class Repartidor implements Runnable {
         }
 
         System.out.printf("[Repartidor - %s] Recorrido finalizado: %d pedidos entregados.%n",
-                nombre, pedidosAsignados.size());
+                nombre, entregadosEnRecorrido);
     }
 
     /**

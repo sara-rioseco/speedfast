@@ -21,6 +21,10 @@ import java.util.List;
  * entregas simultáneas podrían perderse al escribir en el historial. Ninguno
  * de estos métodos realiza pausas, de modo que los hilos nunca quedan
  * bloqueados esperando a otro.</p>
+ *
+ * <p>Es también el controlador que comparten todas las ventanas de la
+ * interfaz gráfica: como trabajan sobre la misma instancia, un pedido
+ * registrado en el formulario aparece en el listado de pedidos.</p>
  */
 public class ControladorDeEnvios implements Rastreable {
 
@@ -33,13 +37,64 @@ public class ControladorDeEnvios implements Rastreable {
     /** Entregas ya despachadas, en el orden en que se realizaron. */
     private final List<String> historialEntregas = new ArrayList<>();
 
+    /** Zona de carga donde esperan los pedidos registrados hasta que un repartidor los retira. */
+    private final ZonaDeCarga zonaDeCarga;
+
     /**
-     * Registra un pedido en el sistema.
+     * Crea el controlador asociado a la zona de carga donde quedarán los
+     * pedidos que se registren.
+     *
+     * @param zonaDeCarga zona de carga compartida con los repartidores
+     */
+    public ControladorDeEnvios(ZonaDeCarga zonaDeCarga) {
+        this.zonaDeCarga = zonaDeCarga;
+    }
+
+    /**
+     * Registra un pedido en el sistema y lo deja en la zona de carga para que
+     * un repartidor lo retire.
      *
      * @param pedido pedido a registrar
+     * @throws IllegalArgumentException si ya existe un pedido con el mismo identificador
      */
     public synchronized void registrarPedido(Pedido pedido) {
+        if (buscarPedidoPorId(pedido.getIdPedido()) != null) {
+            throw new IllegalArgumentException(
+                    "Ya existe un pedido registrado con el ID " + pedido.getIdPedido() + ".");
+        }
         pedidos.add(pedido);
+        zonaDeCarga.agregarPedido(pedido);
+    }
+
+    /**
+     * Busca un pedido registrado por su identificador.
+     *
+     * @param idPedido identificador del pedido buscado
+     * @return el pedido encontrado, o {@code null} si no existe
+     */
+    public synchronized Pedido buscarPedidoPorId(int idPedido) {
+        for (Pedido pedido : pedidos) {
+            if (pedido.getIdPedido() == idPedido) {
+                return pedido;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Cuenta los pedidos registrados que se encuentran en un estado dado.
+     *
+     * @param estado estado a contar
+     * @return cantidad de pedidos en ese estado
+     */
+    public synchronized int contarPedidos(EstadoPedido estado) {
+        int cantidad = 0;
+        for (Pedido pedido : pedidos) {
+            if (pedido.getEstado() == estado) {
+                cantidad++;
+            }
+        }
+        return cantidad;
     }
 
     /**
