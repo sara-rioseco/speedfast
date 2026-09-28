@@ -1,5 +1,10 @@
 package com.speedfast.service;
 
+import com.speedfast.dao.EntregaDAO;
+import com.speedfast.dao.PedidoDAO;
+import com.speedfast.dao.RepartidorDAO;
+import com.speedfast.exception.PersistenciaException;
+import com.speedfast.model.Entrega;
 import com.speedfast.model.EstadoPedido;
 import com.speedfast.model.Pedido;
 import com.speedfast.model.Rastreable;
@@ -16,29 +21,41 @@ import java.util.List;
  * <p>Implementa {@link Rastreable} para exponer el historial general del
  * sistema, mientras que cada {@link Pedido} mantiene el suyo propio.</p>
  *
- * <p>Sus métodos son {@code synchronized} porque varios repartidores lo
- * utilizan al mismo tiempo desde hilos distintos: sin esa protección, dos
- * entregas simultáneas podrían perderse al escribir en el historial. Ninguno
- * de estos métodos realiza pausas, de modo que los hilos nunca quedan
- * bloqueados esperando a otro.</p>
+ * <p>Es el controlador que comparten todas las ventanas de la interfaz
+ * gráfica. Desde la Semana 7, cada cambio se guarda en la base de datos por
+ * medio de los DAO ({@link PedidoDAO}, {@link RepartidorDAO} y
+ * {@link EntregaDAO}): las ventanas siguen trabajando solo con este
+ * controlador y no conocen JDBC. En memoria se mantienen los pedidos y
+ * repartidores con los que trabajan los hilos de la simulación.</p>
  *
- * <p>Es también el controlador que comparten todas las ventanas de la
- * interfaz gráfica: como trabajan sobre la misma instancia, un pedido
- * registrado en el formulario aparece en el listado de pedidos.</p>
+ * <p>Varios repartidores lo utilizan al mismo tiempo desde hilos distintos,
+ * por lo que las listas en memoria se protegen con {@code synchronized}. Las
+ * operaciones con la base de datos se realizan fuera de esos bloqueos: cada
+ * una abre su propia conexión, así que no comparten recursos entre hilos y
+ * ningún repartidor queda esperando a otro mientras se completa una consulta.</p>
  */
 public class ControladorDeEnvios implements Rastreable {
 
-    /** Pedidos registrados en el sistema. */
+    /** Pedidos con los que trabaja la simulación. */
     private final List<Pedido> pedidos = new ArrayList<>();
 
     /** Repartidores disponibles en la plataforma. */
     private final List<Repartidor> repartidores = new ArrayList<>();
 
-    /** Entregas ya despachadas, en el orden en que se realizaron. */
+    /** Entregas ya realizadas en esta sesión, en el orden en que ocurrieron. */
     private final List<String> historialEntregas = new ArrayList<>();
 
     /** Zona de carga donde esperan los pedidos registrados hasta que un repartidor los retira. */
     private final ZonaDeCarga zonaDeCarga;
+
+    /** Acceso a la tabla pedido. */
+    private final PedidoDAO pedidoDAO = new PedidoDAO();
+
+    /** Acceso a la tabla repartidor. */
+    private final RepartidorDAO repartidorDAO = new RepartidorDAO();
+
+    /** Acceso a la tabla entrega. */
+    private final EntregaDAO entregaDAO = new EntregaDAO();
 
     /**
      * Crea el controlador asociado a la zona de carga donde quedarán los
@@ -51,23 +68,58 @@ public class ControladorDeEnvios implements Rastreable {
     }
 
     /**
-     * Registra un pedido en el sistema y lo deja en la zona de carga para que
-     * un repartidor lo retire.
+     * Carga los repartidores y pedidos guardados en la base de datos. Los
+     * pedidos pendientes quedan en la zona de carga, listos para la próxima
+     * ronda de entregas.
      *
-     * @param pedido pedido a registrar
-     * @throws IllegalArgumentException si ya existe un pedido con el mismo identificador
+     * <p>Si un pedido figura en reparto, la aplicación se cerró mientras se
+     * entregaba: ese intento queda registrado en la tabla entrega y el pedido
+     * vuelve a pendiente, para que se entregue en la próxima ronda.</p>
+     *
+     * @throws PersistenciaException si no fue posible leer la base de datos
      */
-    public synchronized void registrarPedido(Pedido pedido) {
-        if (buscarPedidoPorId(pedido.getIdPedido()) != null) {
-            throw new IllegalArgumentException(
-                    "Ya existe un pedido registrado con el ID " + pedido.getIdPedido() + ".");
+    public void cargarDatos() throws PersistenciaException {
+        for (Repartidor repartidor : repartidorDAO.listarTodos()) {
+            incorporarRepartidor(repartidor);
         }
-        pedidos.add(pedido);
-        zonaDeCarga.agregarPedido(pedido);
+        for (Pedido pedido : pedidoDAO.listarTodos()) {
+            if (pedido.reintentarEntrega()) {
+                pedidoDAO.actualizarEstado(pedido);
+                System.out.printf("[Sistema] El pedido #%d quedó en reparto al cerrar la aplicación: "
+                        + "vuelve a la zona de carga.%n", pedido.getIdPedido());
+            }
+            incorporarPedido(pedido);
+        }
     }
 
     /**
-     * Busca un pedido registrado por su identificador.
+     * Guarda un pedido nuevo en la base de datos, que le asigna su ID, y lo
+     * deja en la zona de carga para que un repartidor lo retire. Si no es
+     * posible guardarlo, el pedido tampoco se agrega a la simulación.
+     *
+     * @param pedido pedido a registrar
+     * @throws PersistenciaException si no fue posible guardarlo
+     */
+    public void registrarPedido(Pedido pedido) throws PersistenciaException {
+        pedidoDAO.guardar(pedido);
+        incorporarPedido(pedido);
+    }
+
+    /**
+     * Agrega un pedido ya guardado a la simulación. Solo los pendientes pasan
+     * a la zona de carga.
+     *
+     * @param pedido pedido a incorporar
+     */
+    private synchronized void incorporarPedido(Pedido pedido) {
+        pedidos.add(pedido);
+        if (pedido.getEstado() == EstadoPedido.PENDIENTE) {
+            zonaDeCarga.agregarPedido(pedido);
+        }
+    }
+
+    /**
+     * Busca un pedido de la simulación por su identificador.
      *
      * @param idPedido identificador del pedido buscado
      * @return el pedido encontrado, o {@code null} si no existe
@@ -82,7 +134,7 @@ public class ControladorDeEnvios implements Rastreable {
     }
 
     /**
-     * Cuenta los pedidos registrados que se encuentran en un estado dado.
+     * Cuenta los pedidos de la simulación que se encuentran en un estado dado.
      *
      * @param estado estado a contar
      * @return cantidad de pedidos en ese estado
@@ -98,22 +150,57 @@ public class ControladorDeEnvios implements Rastreable {
     }
 
     /**
-     * Registra un repartidor en la plataforma.
+     * Guarda un repartidor nuevo en la base de datos, que le asigna su ID, y
+     * lo incorpora a la operación: participará desde la próxima ronda.
      *
      * @param repartidor repartidor a registrar
+     * @throws PersistenciaException si no fue posible guardarlo
      */
-    public synchronized void registrarRepartidor(Repartidor repartidor) {
+    public void registrarRepartidor(Repartidor repartidor) throws PersistenciaException {
+        repartidorDAO.guardar(repartidor);
+        incorporarRepartidor(repartidor);
+    }
+
+    /**
+     * Vincula un repartidor ya guardado a la zona de carga y a este
+     * controlador, y lo agrega a la plataforma.
+     *
+     * @param repartidor repartidor a incorporar
+     */
+    private synchronized void incorporarRepartidor(Repartidor repartidor) {
+        repartidor.vincular(zonaDeCarga, this);
         repartidores.add(repartidor);
     }
 
-    /** @return una copia de la lista de pedidos registrados */
+    /** @return una copia de la lista de pedidos de la simulación */
     public synchronized List<Pedido> getPedidos() {
         return new ArrayList<>(pedidos);
     }
 
-    /** @return una copia de la lista de repartidores registrados */
+    /** @return una copia de la lista de repartidores de la plataforma */
     public synchronized List<Repartidor> getRepartidores() {
         return new ArrayList<>(repartidores);
+    }
+
+    /**
+     * Consulta los pedidos guardados en la base de datos, cada uno con el
+     * repartidor de su última entrega. Es la fuente del listado de pedidos.
+     *
+     * @return los pedidos guardados, ordenados por ID
+     * @throws PersistenciaException si no fue posible consultarlos
+     */
+    public List<Pedido> consultarPedidos() throws PersistenciaException {
+        return pedidoDAO.listarTodos();
+    }
+
+    /**
+     * Consulta los repartidores guardados en la base de datos.
+     *
+     * @return los repartidores guardados, ordenados por ID
+     * @throws PersistenciaException si no fue posible consultarlos
+     */
+    public List<Repartidor> consultarRepartidores() throws PersistenciaException {
+        return repartidorDAO.listarTodos();
     }
 
     /**
@@ -189,55 +276,79 @@ public class ControladorDeEnvios implements Rastreable {
     }
 
     /**
-     * Despacha un pedido para que salga a reparto.
+     * Despacha un pedido para que salga a reparto. Si el despacho se concreta,
+     * registra en la base de datos la entrega (qué repartidor lleva el pedido,
+     * con fecha y hora) junto al nuevo estado del pedido.
      *
      * @param pedido pedido a despachar
      * @return el resultado de la operación, listo para imprimirse en consola
+     * @throws PersistenciaException si no fue posible registrar la entrega
      */
-    public synchronized String despachar(Pedido pedido) {
-        return pedido.despachar();
-    }
+    public String despachar(Pedido pedido) throws PersistenciaException {
+        boolean yaEstabaEnReparto = pedido.getEstado() == EstadoPedido.EN_REPARTO;
+        String resultado = pedido.despachar();
 
-    /**
-     * Confirma que un pedido llegó a destino y lo agrega al historial de
-     * entregas del sistema. Es el punto que comparten todos los hilos de
-     * repartidor, por lo que se protege con {@code synchronized}.
-     *
-     * @param pedido pedido efectivamente entregado
-     * @return {@code true} si la entrega se registró correctamente
-     */
-    public synchronized boolean registrarEntrega(Pedido pedido) {
-        if (!pedido.confirmarEntrega()) {
-            return false;
-        }
-        historialEntregas.add(String.format("%s #%d — entregado por %s",
-                pedido.getTipoPedido(),
-                pedido.getIdPedido(),
-                pedido.getRepartidorAsignado().getNombreCompleto()));
-        return true;
-    }
-
-    /**
-     * Cancela un pedido y libera al repartidor que lo tenía asignado, de modo
-     * que vuelva a quedar disponible para otros envíos.
-     *
-     * @param pedido pedido a cancelar
-     * @return el resultado de la operación, listo para imprimirse en consola
-     */
-    public synchronized String cancelar(Pedido pedido) {
-        Repartidor asignado = pedido.getRepartidorAsignado();
-        String resultado = pedido.cancelar();
-
-        if (pedido.getEstado() == EstadoPedido.CANCELADO && asignado != null) {
-            asignado.setDisponibleInmediato(true);
+        if (!yaEstabaEnReparto && pedido.getEstado() == EstadoPedido.EN_REPARTO) {
+            entregaDAO.guardar(new Entrega(pedido, pedido.getRepartidorAsignado()));
         }
         return resultado;
     }
 
     /**
-     * Entrega el historial de entregas realizadas por el sistema.
+     * Confirma que un pedido llegó a destino, guarda su nuevo estado en la
+     * base de datos y lo agrega al historial de entregas del sistema.
      *
-     * @return una copia de la lista de entregas despachadas
+     * @param pedido pedido efectivamente entregado
+     * @return {@code true} si la entrega se registró correctamente
+     * @throws PersistenciaException si no fue posible guardar el nuevo estado
+     */
+    public boolean registrarEntrega(Pedido pedido) throws PersistenciaException {
+        if (!pedido.confirmarEntrega()) {
+            return false;
+        }
+        pedidoDAO.actualizarEstado(pedido);
+        anotarEnHistorial(pedido);
+        return true;
+    }
+
+    /**
+     * Agrega una entrega al historial. Es el punto que comparten todos los
+     * hilos de repartidor, por lo que se protege con {@code synchronized}.
+     *
+     * @param pedido pedido entregado
+     */
+    private synchronized void anotarEnHistorial(Pedido pedido) {
+        historialEntregas.add(String.format("%s #%d — entregado por %s",
+                pedido.getTipoPedido(),
+                pedido.getIdPedido(),
+                pedido.getRepartidorAsignado().getNombreCompleto()));
+    }
+
+    /**
+     * Cancela un pedido, guarda su nuevo estado y libera al repartidor que lo
+     * tenía asignado, de modo que vuelva a quedar disponible para otros envíos.
+     *
+     * @param pedido pedido a cancelar
+     * @return el resultado de la operación, listo para imprimirse en consola
+     * @throws PersistenciaException si no fue posible guardar el nuevo estado
+     */
+    public String cancelar(Pedido pedido) throws PersistenciaException {
+        Repartidor asignado = pedido.getRepartidorAsignado();
+        String resultado = pedido.cancelar();
+
+        if (pedido.getEstado() == EstadoPedido.CANCELADO) {
+            if (asignado != null) {
+                asignado.setDisponibleInmediato(true);
+            }
+            pedidoDAO.actualizarEstado(pedido);
+        }
+        return resultado;
+    }
+
+    /**
+     * Entrega el historial de entregas realizadas en esta sesión.
+     *
+     * @return una copia de la lista de entregas realizadas
      */
     @Override
     public synchronized List<String> verHistorial() {

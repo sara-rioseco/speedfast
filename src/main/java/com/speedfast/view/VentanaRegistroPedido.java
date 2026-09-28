@@ -1,9 +1,8 @@
 package com.speedfast.view;
 
+import com.speedfast.exception.PersistenciaException;
 import com.speedfast.model.Pedido;
-import com.speedfast.model.PedidoComida;
-import com.speedfast.model.PedidoEncomienda;
-import com.speedfast.model.PedidoExpress;
+import com.speedfast.model.TipoPedido;
 import com.speedfast.service.ControladorDeEnvios;
 
 import javax.swing.BorderFactory;
@@ -19,30 +18,24 @@ import java.awt.FlowLayout;
 import java.awt.GridLayout;
 
 /**
- * Formulario para registrar un nuevo pedido a partir de su ID, dirección y
- * tipo. Al presionar Guardar, los datos se validan antes de crear el pedido y
- * agregarlo al {@link ControladorDeEnvios} compartido.
+ * Formulario para registrar un nuevo pedido a partir de su dirección y tipo.
+ * Al presionar Guardar, los datos se validan y el pedido se guarda en la base
+ * de datos por medio del {@link ControladorDeEnvios} compartido.
  *
- * <p>Los demás datos que exige cada tipo de pedido (distancia, peso, tienda,
- * etc.) se completan con valores estándar, definidos como constantes.</p>
+ * <p>El ID ya no se ingresa: lo genera la base de datos ({@code AUTO_INCREMENT})
+ * y se informa al confirmar el registro. Los demás datos que exige cada tipo
+ * de pedido se completan con los valores estándar de {@link TipoPedido}.</p>
  */
 public class VentanaRegistroPedido extends JFrame {
 
-    /** Distancia estándar hasta el destino, en kilómetros. */
-    private static final float DISTANCIA_KM = 3.0f;
-
-    /** Peso estándar de una encomienda, en kilogramos. */
-    private static final float PESO_ENCOMIENDA_KG = 5.0f;
-
-    /** Radio de cobertura estándar de una compra express, en kilómetros. */
-    private static final float RADIO_EXPRESS_KM = 3.0f;
+    /** Largo máximo de la dirección, igual al de la columna {@code direccion} (VARCHAR(150)). */
+    private static final int LARGO_MAXIMO_DIRECCION = 150;
 
     /** Controlador compartido donde se registran los pedidos. */
     private final ControladorDeEnvios controlador;
 
-    private final JTextField txtId = new JTextField(15);
-    private final JTextField txtDireccion = new JTextField(15);
-    private final JComboBox<String> cmbTipo = new JComboBox<>(new String[]{"Comida", "Encomienda", "Express"});
+    private final JTextField txtDireccion = new JTextField(20);
+    private final JComboBox<TipoPedido> cmbTipo = new JComboBox<>(TipoPedido.values());
 
     /**
      * Crea el formulario de registro.
@@ -53,9 +46,7 @@ public class VentanaRegistroPedido extends JFrame {
         super("Registrar pedido");
         this.controlador = controlador;
 
-        JPanel formulario = new JPanel(new GridLayout(3, 2, 10, 10));
-        formulario.add(new JLabel("ID:"));
-        formulario.add(txtId);
+        JPanel formulario = new JPanel(new GridLayout(2, 2, 10, 10));
         formulario.add(new JLabel("Dirección:"));
         formulario.add(txtDireccion);
         formulario.add(new JLabel("Tipo:"));
@@ -72,6 +63,7 @@ public class VentanaRegistroPedido extends JFrame {
         contenido.add(panelBoton, BorderLayout.SOUTH);
 
         setContentPane(contenido);
+        getRootPane().setDefaultButton(btnGuardar);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         pack();
         setResizable(false);
@@ -79,58 +71,36 @@ public class VentanaRegistroPedido extends JFrame {
     }
 
     /**
-     * Valida los campos, crea el pedido del tipo seleccionado y lo registra en
-     * el controlador. Informa el resultado con un {@link JOptionPane}.
+     * Valida los campos, crea el pedido del tipo seleccionado y lo guarda en la
+     * base de datos a través del controlador. Informa el resultado con un
+     * {@link JOptionPane}.
      */
     private void guardarPedido() {
-        String textoId = txtId.getText().trim();
         String direccion = txtDireccion.getText().trim();
 
-        if (textoId.isEmpty() || direccion.isEmpty()) {
-            mostrarError("Debes completar el ID y la dirección.");
+        if (direccion.isEmpty()) {
+            mostrarAdvertencia("Debes ingresar la dirección de entrega.");
+            return;
+        }
+        if (direccion.length() > LARGO_MAXIMO_DIRECCION) {
+            mostrarAdvertencia("La dirección no puede superar los " + LARGO_MAXIMO_DIRECCION + " caracteres.");
             return;
         }
 
-        int id;
+        TipoPedido tipo = (TipoPedido) cmbTipo.getSelectedItem();
+        Pedido pedido = tipo.crearPedido(direccion);
         try {
-            id = Integer.parseInt(textoId);
-        } catch (NumberFormatException e) {
-            mostrarError("El ID debe ser un número entero.");
-            return;
-        }
-        if (id <= 0) {
-            mostrarError("El ID debe ser mayor que cero.");
+            controlador.registrarPedido(pedido);
+        } catch (PersistenciaException e) {
+            JOptionPane.showMessageDialog(this, e.getMensajeConDetalle(),
+                    "Error de base de datos", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
-        try {
-            controlador.registrarPedido(crearPedido(id, direccion, (String) cmbTipo.getSelectedItem()));
-        } catch (IllegalArgumentException e) {
-            mostrarError(e.getMessage());
-            return;
-        }
-
-        JOptionPane.showMessageDialog(this, "Pedido #" + id + " registrado correctamente.",
+        JOptionPane.showMessageDialog(this, "Pedido #" + pedido.getIdPedido() + " registrado correctamente.",
                 "Pedido registrado", JOptionPane.INFORMATION_MESSAGE);
-        txtId.setText("");
         txtDireccion.setText("");
         cmbTipo.setSelectedIndex(0);
-    }
-
-    /**
-     * Crea el pedido que corresponde al tipo elegido en el combo.
-     *
-     * @param id        identificador del pedido
-     * @param direccion dirección de entrega
-     * @param tipo      tipo seleccionado: comida, encomienda o express
-     * @return el pedido creado
-     */
-    private static Pedido crearPedido(int id, String direccion, String tipo) {
-        return switch (tipo) {
-            case "Encomienda" -> new PedidoEncomienda(id, direccion, DISTANCIA_KM, PESO_ENCOMIENDA_KG, "Caja");
-            case "Express" -> new PedidoExpress(id, direccion, DISTANCIA_KM, "Tienda asociada", RADIO_EXPRESS_KM);
-            default -> new PedidoComida(id, direccion, DISTANCIA_KM, "Restaurante asociado", 1);
-        };
     }
 
     /**
@@ -138,7 +108,7 @@ public class VentanaRegistroPedido extends JFrame {
      *
      * @param mensaje motivo por el que no se pudo guardar el pedido
      */
-    private void mostrarError(String mensaje) {
+    private void mostrarAdvertencia(String mensaje) {
         JOptionPane.showMessageDialog(this, mensaje, "Dato inválido", JOptionPane.WARNING_MESSAGE);
     }
 }

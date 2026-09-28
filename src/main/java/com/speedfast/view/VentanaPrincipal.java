@@ -19,11 +19,11 @@ import java.util.concurrent.ExecutionException;
 
 /**
  * Ventana principal de SpeedFast. Desde aquí se abren las ventanas de registro
- * y listado de pedidos, y se inician las entregas.
+ * de pedidos y repartidores y el listado de pedidos, y se inician las entregas.
  *
- * <p>Todas las ventanas reciben el mismo {@link ControladorDeEnvios}, que es
- * donde viven los datos: un pedido registrado en el formulario aparece luego
- * en el listado.</p>
+ * <p>Todas las ventanas reciben el mismo {@link ControladorDeEnvios}, que
+ * guarda los datos en la base de datos: un pedido registrado en el formulario
+ * aparece luego en el listado.</p>
  */
 public class VentanaPrincipal extends JFrame {
 
@@ -52,13 +52,16 @@ public class VentanaPrincipal extends JFrame {
         titulo.setFont(titulo.getFont().deriveFont(Font.BOLD, 18f));
 
         JButton btnRegistrar = new JButton("Registrar pedido");
+        JButton btnRepartidor = new JButton("Registrar repartidor");
         JButton btnListar = new JButton("Listar pedidos");
         btnRegistrar.addActionListener(e -> new VentanaRegistroPedido(controlador).setVisible(true));
+        btnRepartidor.addActionListener(e -> new VentanaRegistroRepartidor(controlador).setVisible(true));
         btnListar.addActionListener(e -> new VentanaListaPedidos(controlador).setVisible(true));
         btnEntregas.addActionListener(e -> iniciarEntregas());
 
-        JPanel botones = new JPanel(new GridLayout(3, 1, 0, 10));
+        JPanel botones = new JPanel(new GridLayout(4, 1, 0, 10));
         botones.add(btnRegistrar);
+        botones.add(btnRepartidor);
         botones.add(btnListar);
         botones.add(btnEntregas);
 
@@ -69,7 +72,7 @@ public class VentanaPrincipal extends JFrame {
 
         setContentPane(contenido);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
-        setSize(380, 280);
+        setSize(380, 330);
         setResizable(false);
         setLocationRelativeTo(null);
     }
@@ -79,12 +82,30 @@ public class VentanaPrincipal extends JFrame {
      * cumplen con su perfil (quedando asignados a ellos) y los entregan en
      * paralelo.
      *
+     * <p>Antes de comenzar se comprueba que haya pedidos pendientes y
+     * repartidores registrados; si falta alguno, se informa al usuario en
+     * lugar de lanzar una ronda sin trabajo.</p>
+     *
      * <p>La ronda se ejecuta con un {@link SwingWorker}, es decir, en un hilo de
      * fondo: la ventana sigue respondiendo mientras los repartidores trabajan.
      * Al terminar, {@code done()} vuelve al hilo gráfico para habilitar el
      * botón y mostrar el resultado.</p>
      */
     private void iniciarEntregas() {
+        if (controlador.contarPedidos(EstadoPedido.PENDIENTE) == 0) {
+            JOptionPane.showMessageDialog(this,
+                    "No hay pedidos pendientes de entrega.\nRegistra un pedido para iniciar una nueva ronda.",
+                    "Entregas", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        if (controlador.getRepartidores().isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "No hay repartidores registrados.\nRegistra al menos uno para iniciar las entregas.",
+                    "Entregas", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        int entregadosAntes = controlador.contarPedidos(EstadoPedido.ENTREGADO);
         btnEntregas.setEnabled(false);
         btnEntregas.setText("Entregas en curso...");
 
@@ -102,9 +123,10 @@ public class VentanaPrincipal extends JFrame {
                 try {
                     get();
                     JOptionPane.showMessageDialog(VentanaPrincipal.this,
-                            "Entregas finalizadas.\nPedidos entregados: "
-                                    + controlador.contarPedidos(EstadoPedido.ENTREGADO)
-                                    + " de " + controlador.getPedidos().size()
+                            "Entregas finalizadas.\nPedidos entregados en esta ronda: "
+                                    + (controlador.contarPedidos(EstadoPedido.ENTREGADO) - entregadosAntes)
+                                    + "\nPedidos que siguen pendientes: "
+                                    + controlador.contarPedidos(EstadoPedido.PENDIENTE)
                                     + "\n\nRevisa el listado para ver el repartidor de cada pedido.",
                             "Entregas", JOptionPane.INFORMATION_MESSAGE);
                 } catch (ExecutionException e) {

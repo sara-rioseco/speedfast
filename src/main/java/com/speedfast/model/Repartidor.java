@@ -1,6 +1,7 @@
 package com.speedfast.model;
 
 import com.speedfast.exception.EntregaException;
+import com.speedfast.exception.PersistenciaException;
 import com.speedfast.service.ControladorDeEnvios;
 import com.speedfast.service.ZonaDeCarga;
 
@@ -15,6 +16,11 @@ import java.util.Random;
  * <p>Implementa {@link Runnable}, de modo que cada repartidor se ejecuta como
  * un hilo independiente que retira pedidos desde la {@link ZonaDeCarga}
  * compartida y simula las entregas en paralelo con el resto de repartidores.</p>
+ *
+ * <p>La tabla {@code repartidor} solo guarda el identificador y el nombre. La
+ * zona de carga y el controlador no forman parte de esos datos: se asignan con
+ * {@link #vincular(ZonaDeCarga, ControladorDeEnvios)} cuando el repartidor se
+ * incorpora a la operación.</p>
  */
 public class Repartidor implements Runnable {
 
@@ -24,8 +30,20 @@ public class Repartidor implements Runnable {
     /** Rango aleatorio que se suma a la espera mínima, en milisegundos. */
     private static final int ESPERA_ALEATORIA_MS = 1500;
 
-    /** Identificador único del repartidor. */
-    private final int idRepartidor;
+    /** Vehículo del perfil estándar. */
+    private static final String VEHICULO_ESTANDAR = "Motocicleta";
+
+    /** Carga máxima del perfil estándar, en kilogramos. */
+    private static final float PESO_MAXIMO_ESTANDAR_KG = 15.0f;
+
+    /** Distancia al punto de retiro del perfil estándar, en kilómetros. */
+    private static final float DISTANCIA_ESTANDAR_KM = 1.5f;
+
+    /**
+     * Identificador único del repartidor. Lo asigna la base de datos al
+     * guardarlo, antes de que el repartidor se incorpore a la operación.
+     */
+    private int idRepartidor;
 
     /** Nombre del repartidor. */
     private final String nombre;
@@ -62,11 +80,15 @@ public class Repartidor implements Runnable {
     /** Pedidos que este repartidor retiró y entregó durante su recorrido. */
     private final List<Pedido> pedidosAsignados = new ArrayList<>();
 
-    /** Zona de carga compartida desde la que retira sus pedidos. */
-    private final ZonaDeCarga zonaDeCarga;
+    /**
+     * Zona de carga compartida desde la que retira sus pedidos. Se asigna al
+     * vincular al repartidor, antes de lanzar su hilo: {@code ExecutorService}
+     * garantiza que el hilo vea los valores asignados antes de su ejecución.
+     */
+    private ZonaDeCarga zonaDeCarga;
 
-    /** Controlador que registra las entregas realizadas. */
-    private final ControladorDeEnvios controlador;
+    /** Controlador que registra las entregas realizadas. Se asigna al vincularlo. */
+    private ControladorDeEnvios controlador;
 
     /** Generador de las pausas aleatorias que simulan cada entrega. */
     private final Random random = new Random();
@@ -84,15 +106,10 @@ public class Repartidor implements Runnable {
      * @param mochilaTermica      {@code true} si cuenta con mochila térmica
      * @param disponibleInmediato {@code true} si puede tomar un pedido de inmediato
      * @param distanciaKm         distancia al punto de retiro en kilómetros
-     * @param zonaDeCarga         zona de carga compartida desde la que retira pedidos
-     * @param controlador         controlador donde se registran las entregas
      */
     public Repartidor(int idRepartidor, String nombre, String apellido, String telefono,
                       String direccion, String tipoVehiculo, float pesoMaximo,
-                      boolean mochilaTermica, boolean disponibleInmediato, float distanciaKm,
-                      ZonaDeCarga zonaDeCarga, ControladorDeEnvios controlador) {
-        this.zonaDeCarga = zonaDeCarga;
-        this.controlador = controlador;
+                      boolean mochilaTermica, boolean disponibleInmediato, float distanciaKm) {
         this.idRepartidor = idRepartidor;
         this.nombre = nombre;
         this.apellido = apellido;
@@ -105,9 +122,46 @@ public class Repartidor implements Runnable {
         this.distanciaKm = distanciaKm;
     }
 
+    /**
+     * Crea un repartidor a partir de los datos que guarda la base de datos:
+     * identificador y nombre. El resto de su perfil toma valores estándar
+     * (motocicleta con mochila térmica, 15 kg de carga, disponible y a 1,5 km),
+     * que le permiten atender cualquier pedido registrado desde la interfaz.
+     *
+     * @param idRepartidor identificador único
+     * @param nombre       nombre del repartidor
+     */
+    public Repartidor(int idRepartidor, String nombre) {
+        this(idRepartidor, nombre, "", "", "", VEHICULO_ESTANDAR, PESO_MAXIMO_ESTANDAR_KG,
+                true, true, DISTANCIA_ESTANDAR_KM);
+    }
+
+    /**
+     * Incorpora al repartidor a la operación: le indica desde qué zona de
+     * carga retira pedidos y en qué controlador registra sus entregas. Lo
+     * invoca el controlador al registrar al repartidor.
+     *
+     * @param zonaDeCarga zona de carga compartida
+     * @param controlador controlador donde se registran las entregas
+     */
+    public void vincular(ZonaDeCarga zonaDeCarga, ControladorDeEnvios controlador) {
+        this.zonaDeCarga = zonaDeCarga;
+        this.controlador = controlador;
+    }
+
     /** @return el identificador del repartidor */
     public int getIdRepartidor() {
         return idRepartidor;
+    }
+
+    /**
+     * Actualiza el identificador del repartidor. Lo usa {@code RepartidorDAO}
+     * para asignar el ID que genera la base de datos al guardarlo.
+     *
+     * @param idRepartidor nuevo identificador del repartidor
+     */
+    public void setIdRepartidor(int idRepartidor) {
+        this.idRepartidor = idRepartidor;
     }
 
     /** @return el nombre del repartidor */
@@ -160,9 +214,13 @@ public class Repartidor implements Runnable {
         return distanciaKm;
     }
 
-    /** @return el nombre y el apellido del repartidor */
+    /**
+     * @return el nombre y el apellido del repartidor; solo el nombre si no
+     *         tiene apellido registrado, como ocurre con los leídos desde la
+     *         base de datos, cuya columna {@code nombre} guarda el nombre completo
+     */
     public String getNombreCompleto() {
-        return nombre + " " + apellido;
+        return apellido.isBlank() ? nombre : nombre + " " + apellido;
     }
 
     /**
@@ -194,9 +252,15 @@ public class Repartidor implements Runnable {
      * <p>Un mismo repartidor puede ejecutar varios recorridos (uno cada vez que
      * se inician las entregas desde la interfaz), por lo que el total
      * informado al final corresponde solo al recorrido actual.</p>
+     *
+     * @throws IllegalStateException si el repartidor aún no fue vinculado a una zona de carga
      */
     @Override
     public void run() {
+        if (zonaDeCarga == null || controlador == null) {
+            throw new IllegalStateException(
+                    "El repartidor " + nombre + " no está vinculado a una zona de carga.");
+        }
         int entregadosEnRecorrido = 0;
         Pedido pedido = zonaDeCarga.retirarPedido(this);
 
@@ -217,6 +281,9 @@ public class Repartidor implements Runnable {
             } catch (EntregaException e) {
                 System.out.printf("[Repartidor - %s] No se pudo entregar el pedido #%d: %s%n",
                         nombre, pedido.getIdPedido(), e.getMessage());
+            } catch (PersistenciaException e) {
+                System.out.printf("[Repartidor - %s] Error de base de datos en el pedido #%d: %s%n",
+                        nombre, pedido.getIdPedido(), e.getMensajeConDetalle());
             } catch (RuntimeException e) {
                 System.out.printf("[Repartidor - %s] Error inesperado en el pedido #%d: %s%n",
                         nombre, pedido.getIdPedido(), e.getMessage());
@@ -230,13 +297,16 @@ public class Repartidor implements Runnable {
 
     /**
      * Entrega un pedido ya retirado de la zona de carga: lo pone en reparto,
-     * simula el traslado con una pausa aleatoria y confirma la entrega.
+     * simula el traslado con una pausa aleatoria y confirma la entrega. Cada
+     * cambio de estado queda registrado en la base de datos por el controlador.
      *
      * @param pedido pedido a entregar
-     * @throws EntregaException     si el pedido no está en condiciones de ser despachado
-     * @throws InterruptedException si el hilo es interrumpido durante el traslado
+     * @throws EntregaException      si el pedido no está en condiciones de ser despachado
+     * @throws PersistenciaException si no se pudo registrar el avance en la base de datos
+     * @throws InterruptedException  si el hilo es interrumpido durante el traslado
      */
-    private void entregarPedido(Pedido pedido) throws EntregaException, InterruptedException {
+    private void entregarPedido(Pedido pedido)
+            throws EntregaException, PersistenciaException, InterruptedException {
         if (pedido.getEstado() == EstadoPedido.CANCELADO) {
             throw new EntregaException("el pedido fue cancelado");
         }

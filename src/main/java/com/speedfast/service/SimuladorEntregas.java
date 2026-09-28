@@ -17,6 +17,9 @@ import java.util.concurrent.TimeUnit;
  * ronda comience. {@link #ejecutarEntregas()} espera hasta el final de la
  * ronda, por lo que debe invocarse desde un hilo de fondo y nunca desde el
  * hilo gráfico, que quedaría congelado mientras los repartidores trabajan.</p>
+ *
+ * <p>Los repartidores se obtienen del controlador al comenzar cada ronda, de
+ * modo que quienes se registren desde la interfaz participan en la siguiente.</p>
  */
 public class SimuladorEntregas {
 
@@ -26,18 +29,18 @@ public class SimuladorEntregas {
     /** Zona de carga desde la que los repartidores retiran pedidos. */
     private final ZonaDeCarga zonaDeCarga;
 
-    /** Repartidores que participan en cada ronda. */
-    private final List<Repartidor> repartidores;
+    /** Controlador del que se obtienen los repartidores de cada ronda. */
+    private final ControladorDeEnvios controlador;
 
     /**
-     * Crea el simulador para una zona de carga y un grupo de repartidores.
+     * Crea el simulador para una zona de carga y los repartidores de un controlador.
      *
-     * @param zonaDeCarga  zona de carga que auditará el monitor
-     * @param repartidores repartidores que se ejecutarán como hilos
+     * @param zonaDeCarga zona de carga que auditará el monitor
+     * @param controlador controlador con los repartidores que se ejecutarán como hilos
      */
-    public SimuladorEntregas(ZonaDeCarga zonaDeCarga, List<Repartidor> repartidores) {
+    public SimuladorEntregas(ZonaDeCarga zonaDeCarga, ControladorDeEnvios controlador) {
         this.zonaDeCarga = zonaDeCarga;
-        this.repartidores = repartidores;
+        this.controlador = controlador;
     }
 
     /**
@@ -45,6 +48,12 @@ public class SimuladorEntregas {
      * terminen de retirar y entregar los pedidos compatibles de la zona de carga.
      */
     public void ejecutarEntregas() {
+        List<Repartidor> repartidores = controlador.getRepartidores();
+        if (repartidores.isEmpty()) {
+            System.out.println("[Sistema] No hay repartidores registrados: no se inicia la ronda.");
+            return;
+        }
+
         MonitorEstado monitor = new MonitorEstado(zonaDeCarga);
         Thread hiloMonitor = new Thread(monitor, "Monitor");
         hiloMonitor.setDaemon(true);

@@ -6,9 +6,6 @@ package com.speedfast.model;
  */
 public class PedidoComida extends Pedido {
 
-    /** Tipo de servicio con el que se identifica esta subclase. */
-    private static final String TIPO = "Pedido de Comida";
-
     /** Minutos de preparación considerados como base. */
     private static final int TIEMPO_BASE = 15;
 
@@ -32,7 +29,7 @@ public class PedidoComida extends Pedido {
      */
     public PedidoComida(int idPedido, String direccionEntrega, float distanciaKm,
                         String restaurante, int cantidadPlatos) {
-        super(idPedido, direccionEntrega, distanciaKm, TIPO);
+        super(idPedido, direccionEntrega, distanciaKm, TipoPedido.COMIDA);
         this.restaurante = restaurante;
         this.cantidadPlatos = cantidadPlatos;
     }

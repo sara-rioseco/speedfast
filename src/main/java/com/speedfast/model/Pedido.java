@@ -24,8 +24,8 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
     /** Distancia a recorrer hasta la dirección de entrega, en kilómetros. */
     private float distanciaKm;
 
-    /** Tipo de servicio: comida, encomienda o compra express. */
-    private String tipoPedido;
+    /** Tipo de servicio: comida, encomienda o compra express. Lo fija cada subclase. */
+    private final TipoPedido tipo;
 
     /** Estado actual del pedido dentro del sistema. */
     private EstadoPedido estado;
@@ -42,13 +42,13 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
      * @param idPedido         identificador único del pedido
      * @param direccionEntrega dirección de entrega
      * @param distanciaKm      distancia hasta la entrega, en kilómetros
-     * @param tipoPedido       tipo de servicio asociado
+     * @param tipo             tipo de servicio asociado
      */
-    public Pedido(int idPedido, String direccionEntrega, float distanciaKm, String tipoPedido) {
+    public Pedido(int idPedido, String direccionEntrega, float distanciaKm, TipoPedido tipo) {
         this.idPedido = idPedido;
         this.direccionEntrega = direccionEntrega;
         this.distanciaKm = distanciaKm;
-        this.tipoPedido = tipoPedido;
+        this.tipo = tipo;
         this.estado = EstadoPedido.PENDIENTE;
         registrarEvento("Pedido registrado en el sistema");
     }
@@ -58,7 +58,12 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
         return idPedido;
     }
 
-    /** @param idPedido nuevo identificador del pedido */
+    /**
+     * Actualiza el identificador del pedido. Lo usa {@code PedidoDAO} para
+     * asignar el ID que genera la base de datos al guardar un pedido nuevo.
+     *
+     * @param idPedido nuevo identificador del pedido
+     */
     public void setIdPedido(int idPedido) {
         this.idPedido = idPedido;
     }
@@ -83,14 +88,14 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
         this.distanciaKm = distanciaKm;
     }
 
-    /** @return el tipo de pedido */
-    public String getTipoPedido() {
-        return tipoPedido;
+    /** @return el tipo de servicio del pedido */
+    public TipoPedido getTipo() {
+        return tipo;
     }
 
-    /** @param tipoPedido nuevo tipo de pedido */
-    public void setTipoPedido(String tipoPedido) {
-        this.tipoPedido = tipoPedido;
+    /** @return la descripción del tipo de pedido, por ejemplo "Pedido de Comida" */
+    public String getTipoPedido() {
+        return tipo.getDescripcion();
     }
 
     /** @return el estado actual del pedido */
@@ -229,6 +234,37 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
     }
 
     /**
+     * Devuelve a pendiente un pedido cuya entrega quedó interrumpida (por
+     * ejemplo, porque la aplicación se cerró mientras iba en reparto), de modo
+     * que pueda volver a la zona de carga y otro repartidor lo retire.
+     *
+     * @return {@code true} si el pedido estaba en reparto y volvió a pendiente
+     */
+    public synchronized boolean reintentarEntrega() {
+        if (estado != EstadoPedido.EN_REPARTO) {
+            return false;
+        }
+        estado = EstadoPedido.PENDIENTE;
+        repartidorAsignado = null;
+        registrarEvento("Entrega interrumpida: el pedido vuelve a la zona de carga");
+        return true;
+    }
+
+    /**
+     * Restablece el estado y el repartidor con que el pedido quedó guardado en
+     * la base de datos. Lo usa {@code PedidoDAO} al reconstruir los pedidos
+     * leídos: a diferencia de {@link #despachar()} o {@link #confirmarEntrega()},
+     * no valida la transición, porque esta ya ocurrió y quedó registrada.
+     *
+     * @param estado     estado registrado en la base de datos
+     * @param repartidor repartidor de su última entrega, o {@code null} si no tiene
+     */
+    public synchronized void restablecer(EstadoPedido estado, Repartidor repartidor) {
+        this.estado = estado;
+        this.repartidorAsignado = repartidor;
+    }
+
+    /**
      * Entrega el historial de eventos del pedido.
      *
      * @return una copia de la lista de eventos registrados
@@ -315,7 +351,7 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
      * @return tipo de pedido con su identificador y la dirección de entrega
      */
     protected String encabezado() {
-        return String.format("[%s] N° %d%n", tipoPedido, idPedido)
+        return String.format("[%s] N° %d%n", getTipoPedido(), idPedido)
                 + String.format("Dirección de entrega: %s%n", direccionEntrega);
     }
 
@@ -328,6 +364,6 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
     @Override
     public String toString() {
         return String.format("%s [id=%d, dirección=%s, %.1f km, %s]",
-                tipoPedido, idPedido, direccionEntrega, distanciaKm, estado.getDescripcion());
+                getTipoPedido(), idPedido, direccionEntrega, distanciaKm, estado.getDescripcion());
     }
 }

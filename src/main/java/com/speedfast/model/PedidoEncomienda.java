@@ -6,9 +6,6 @@ package com.speedfast.model;
  */
 public class PedidoEncomienda extends Pedido {
 
-    /** Tipo de servicio con el que se identifica esta subclase. */
-    private static final String TIPO = "Pedido de Encomienda";
-
     /** Minutos de gestión considerados como base. */
     private static final int TIEMPO_BASE = 20;
 
@@ -32,7 +29,7 @@ public class PedidoEncomienda extends Pedido {
      */
     public PedidoEncomienda(int idPedido, String direccionEntrega, float distanciaKm,
                             float pesoKg, String tipoEmbalaje) {
-        super(idPedido, direccionEntrega, distanciaKm, TIPO);
+        super(idPedido, direccionEntrega, distanciaKm, TipoPedido.ENCOMIENDA);
         this.pesoKg = pesoKg;
         this.tipoEmbalaje = tipoEmbalaje;
     }

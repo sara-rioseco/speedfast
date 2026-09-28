@@ -6,9 +6,6 @@ package com.speedfast.model;
  */
 public class PedidoExpress extends Pedido {
 
-    /** Tipo de servicio con el que se identifica esta subclase. */
-    private static final String TIPO = "Pedido Express";
-
     /** Minutos considerados como base para una compra express. */
     private static final int TIEMPO_BASE = 10;
 
@@ -35,7 +32,7 @@ public class PedidoExpress extends Pedido {
      */
     public PedidoExpress(int idPedido, String direccionEntrega, float distanciaKm,
                          String tienda, float radioMaximoKm) {
-        super(idPedido, direccionEntrega, distanciaKm, TIPO);
+        super(idPedido, direccionEntrega, distanciaKm, TipoPedido.EXPRESS);
         this.tienda = tienda;
         this.radioMaximoKm = radioMaximoKm;
     }
