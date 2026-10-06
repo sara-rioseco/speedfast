@@ -1,6 +1,6 @@
 package com.speedfast.main;
 
-import com.speedfast.dao.ConexionBD;
+import com.speedfast.dao.ConexionDB;
 import com.speedfast.exception.PersistenciaException;
 import com.speedfast.service.ControladorDeEnvios;
 import com.speedfast.service.SimuladorEntregas;
@@ -14,10 +14,9 @@ import javax.swing.UnsupportedLookAndFeelException;
 
 /**
  * Punto de entrada de SpeedFast. Arma el sistema —zona de carga, controlador y
- * simulador de entregas—, carga los repartidores y pedidos guardados en la
- * base de datos y abre la {@link VentanaPrincipal}, desde la cual el usuario
- * registra pedidos y repartidores, los consulta e inicia las entregas
- * concurrentes.
+ * simulador de entregas—, comprueba que la base de datos esté configurada y
+ * disponible, y abre la {@link VentanaPrincipal}, desde la cual el usuario
+ * gestiona pedidos, repartidores y entregas e inicia las entregas concurrentes.
  */
 public class Main {
 
@@ -34,8 +33,12 @@ public class Main {
         // Swing exige que las ventanas se creen y modifiquen desde su propio hilo (EDT).
         SwingUtilities.invokeLater(() -> {
             aplicarAspectoDelSistema();
+            if (!ConexionDB.estaConfigurada()) {
+                informarFaltaDeContrasena();
+                return;
+            }
             try {
-                controlador.cargarDatos();
+                controlador.verificarBaseDeDatos();
             } catch (PersistenciaException e) {
                 informarErrorDeConexion(e);
                 return;
@@ -45,8 +48,26 @@ public class Main {
     }
 
     /**
-     * Informa que no fue posible cargar los datos iniciales. Sin base de datos
-     * la aplicación no puede funcionar, por lo que se cierra tras el aviso.
+     * Informa que falta configurar la contraseña de la base de datos y cómo
+     * hacerlo. Sin ella la aplicación no puede conectarse, por lo que se
+     * cierra tras el aviso.
+     */
+    private static void informarFaltaDeContrasena() {
+        String variable = ConexionDB.VARIABLE_PASSWORD;
+        System.out.println("[Sistema] Falta la variable de entorno " + variable + " con la contraseña de MySQL.");
+        JOptionPane.showMessageDialog(null,
+                "No se configuró la contraseña de la base de datos."
+                        + "\n\nPor seguridad, la contraseña no se escribe en el código: define la variable"
+                        + "\nde entorno " + variable + " y vuelve a iniciar la aplicación."
+                        + "\n\n  • IntelliJ IDEA: Run → Edit Configurations… → Environment variables"
+                        + "\n  • PowerShell: $env:" + variable + "=\"tu_contraseña\""
+                        + "\n  • bash: export " + variable + "=tu_contraseña",
+                "SpeedFast — Configuración", JOptionPane.WARNING_MESSAGE);
+    }
+
+    /**
+     * Informa que no fue posible acceder a la base de datos. Sin ella la
+     * aplicación no puede funcionar, por lo que se cierra tras el aviso.
      *
      * @param e excepción con el motivo y el detalle del error
      */
@@ -54,11 +75,11 @@ public class Main {
         System.out.println("[Sistema] " + e.getMensajeConDetalle().replace('\n', ' '));
         JOptionPane.showMessageDialog(null,
                 e.getMensajeConDetalle()
-                        + "\n\nConexión: " + ConexionBD.getUrl()
+                        + "\n\nConexión: " + ConexionDB.getUrl()
                         + "\n\nVerifica que:"
                         + "\n  • El servidor MySQL esté en ejecución."
                         + "\n  • La base de datos se haya creado con sql/01_crear_base_datos.sql."
-                        + "\n  • El usuario y la contraseña de ConexionBD sean correctos.",
+                        + "\n  • La contraseña de " + ConexionDB.VARIABLE_PASSWORD + " sea correcta.",
                 "SpeedFast — Base de datos", JOptionPane.ERROR_MESSAGE);
     }
 

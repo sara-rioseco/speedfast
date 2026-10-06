@@ -8,11 +8,16 @@ import java.time.temporal.ChronoUnit;
 /**
  * Entrega de un pedido por parte de un repartidor: registra qué repartidor
  * sacó a reparto qué pedido, y en qué fecha y hora. Corresponde a la tabla
- * {@code entrega}, que relaciona las tablas {@code pedido} y {@code repartidor}.
+ * {@code entregas}, que relaciona las tablas {@code pedidos} y {@code repartidores}.
  *
  * <p>Un repartidor puede realizar muchas entregas, y un pedido puede tener más
  * de una: cada entrega es un intento, y si uno queda interrumpido el pedido
- * vuelve a la zona de carga y se registra un nuevo intento al retirarlo otra vez.</p>
+ * vuelve a pendiente y se registra un nuevo intento al despacharlo otra vez.</p>
+ *
+ * <p>Las entregas se registran de dos formas: los repartidores de la
+ * simulación las crean al salir a reparto, con la fecha y hora de ese momento,
+ * y el usuario puede registrarlas desde la ventana de gestión de entregas,
+ * indicando la fecha y la hora.</p>
  */
 public class Entrega {
 
@@ -32,19 +37,48 @@ public class Entrega {
     private final LocalTime hora;
 
     /**
-     * Crea una entrega que comienza en este momento. La fecha y la hora se
-     * toman de un mismo instante, para que no queden desfasadas si la entrega
-     * comienza justo a medianoche.
+     * Crea una entrega con todos sus datos. Valida que asocie un pedido y un
+     * repartidor y que tenga fecha y hora, de modo que ninguna entrega
+     * incompleta llegue a la base de datos.
+     *
+     * @param idEntrega  identificador de la entrega, o 0 si aún no se guarda
+     * @param pedido     pedido que sale a reparto
+     * @param repartidor repartidor que realiza la entrega
+     * @param fecha      fecha en que el pedido salió a reparto
+     * @param hora       hora en que el pedido salió a reparto
+     * @throws IllegalArgumentException si falta el pedido, el repartidor, la fecha o la hora
+     */
+    public Entrega(int idEntrega, Pedido pedido, Repartidor repartidor, LocalDate fecha, LocalTime hora) {
+        if (pedido == null || repartidor == null) {
+            throw new IllegalArgumentException("La entrega debe asociar un pedido y un repartidor.");
+        }
+        if (fecha == null || hora == null) {
+            throw new IllegalArgumentException("La entrega debe tener fecha y hora.");
+        }
+        this.idEntrega = idEntrega;
+        this.pedido = pedido;
+        this.repartidor = repartidor;
+        this.fecha = fecha;
+        this.hora = hora;
+    }
+
+    /**
+     * Crea una entrega que comienza en este momento. La usan los repartidores
+     * de la simulación al salir a reparto.
      *
      * @param pedido     pedido que sale a reparto
      * @param repartidor repartidor que realiza la entrega
      */
     public Entrega(Pedido pedido, Repartidor repartidor) {
-        LocalDateTime ahora = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
-        this.pedido = pedido;
-        this.repartidor = repartidor;
-        this.fecha = ahora.toLocalDate();
-        this.hora = ahora.toLocalTime();
+        this(pedido, repartidor, LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS));
+    }
+
+    /**
+     * Toma la fecha y la hora de un mismo instante, para que no queden
+     * desfasadas si la entrega comienza justo a medianoche.
+     */
+    private Entrega(Pedido pedido, Repartidor repartidor, LocalDateTime momento) {
+        this(0, pedido, repartidor, momento.toLocalDate(), momento.toLocalTime());
     }
 
     /** @return el identificador de la entrega, o 0 si aún no se guarda */

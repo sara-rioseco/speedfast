@@ -2,7 +2,9 @@ package com.speedfast.model;
 
 /**
  * Tipos de servicio que ofrece SpeedFast. El nombre de cada constante es el
- * valor que se guarda en la columna {@code tipo} de la tabla {@code pedido}.
+ * valor que se guarda en la columna {@code tipo} (ENUM) de la tabla
+ * {@code pedidos}, y también el texto que muestran los combos y tablas de la
+ * interfaz: COMIDA, ENCOMIENDA y EXPRESS.
  *
  * <p>La tabla solo guarda la dirección, el tipo y el estado de cada pedido. Por
  * eso los demás datos que exige cada subclase (distancia, peso, tienda, etc.)
@@ -72,16 +74,5 @@ public enum TipoPedido {
             case ENCOMIENDA -> new PedidoEncomienda(idPedido, direccion, DISTANCIA_KM, PESO_ENCOMIENDA_KG, "Caja");
             case EXPRESS -> new PedidoExpress(idPedido, direccion, DISTANCIA_KM, "Tienda asociada", RADIO_EXPRESS_KM);
         };
-    }
-
-    /**
-     * Se sobrescribe para que el {@code JComboBox} del formulario muestre la
-     * descripción del tipo en lugar del nombre de la constante.
-     *
-     * @return la descripción del tipo
-     */
-    @Override
-    public String toString() {
-        return descripcion;
     }
 }

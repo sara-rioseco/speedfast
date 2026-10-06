@@ -100,6 +100,18 @@ public class ZonaDeCarga {
     }
 
     /**
+     * Deja la zona de carga lista para una nueva ronda: quita los pedidos que
+     * quedaron sin retirar y reinicia los contadores. Los pedidos pendientes
+     * se vuelven a cargar desde la base de datos al comenzar cada ronda.
+     */
+    public synchronized void vaciar() {
+        pedidosPendientes.clear();
+        pedidosEnReparto.set(0);
+        pedidosEntregados.set(0);
+        pedidosRecibidos.set(0);
+    }
+
+    /**
      * Registra que un pedido retirado ya llegó a destino.
      */
     public void confirmarEntrega() {

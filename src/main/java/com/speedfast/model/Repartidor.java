@@ -17,12 +17,15 @@ import java.util.Random;
  * un hilo independiente que retira pedidos desde la {@link ZonaDeCarga}
  * compartida y simula las entregas en paralelo con el resto de repartidores.</p>
  *
- * <p>La tabla {@code repartidor} solo guarda el identificador y el nombre. La
+ * <p>La tabla {@code repartidores} solo guarda el identificador y el nombre. La
  * zona de carga y el controlador no forman parte de esos datos: se asignan con
  * {@link #vincular(ZonaDeCarga, ControladorDeEnvios)} cuando el repartidor se
- * incorpora a la operación.</p>
+ * incorpora a una ronda de entregas.</p>
  */
 public class Repartidor implements Runnable {
+
+    /** Largo máximo del nombre, igual al de la columna {@code nombre} (VARCHAR(100)). */
+    public static final int LARGO_MAXIMO_NOMBRE = 100;
 
     /** Tiempo mínimo que simula una entrega, en milisegundos. */
     private static final int ESPERA_MINIMA_MS = 500;
@@ -106,12 +109,13 @@ public class Repartidor implements Runnable {
      * @param mochilaTermica      {@code true} si cuenta con mochila térmica
      * @param disponibleInmediato {@code true} si puede tomar un pedido de inmediato
      * @param distanciaKm         distancia al punto de retiro en kilómetros
+     * @throws IllegalArgumentException si el nombre está vacío o es demasiado largo
      */
     public Repartidor(int idRepartidor, String nombre, String apellido, String telefono,
                       String direccion, String tipoVehiculo, float pesoMaximo,
                       boolean mochilaTermica, boolean disponibleInmediato, float distanciaKm) {
         this.idRepartidor = idRepartidor;
-        this.nombre = nombre;
+        this.nombre = validarNombre(nombre);
         this.apellido = apellido;
         this.telefono = telefono;
         this.direccion = direccion;
@@ -130,6 +134,7 @@ public class Repartidor implements Runnable {
      *
      * @param idRepartidor identificador único
      * @param nombre       nombre del repartidor
+     * @throws IllegalArgumentException si el nombre está vacío o es demasiado largo
      */
     public Repartidor(int idRepartidor, String nombre) {
         this(idRepartidor, nombre, "", "", "", VEHICULO_ESTANDAR, PESO_MAXIMO_ESTANDAR_KG,
@@ -137,9 +142,31 @@ public class Repartidor implements Runnable {
     }
 
     /**
-     * Incorpora al repartidor a la operación: le indica desde qué zona de
-     * carga retira pedidos y en qué controlador registra sus entregas. Lo
-     * invoca el controlador al registrar al repartidor.
+     * Valida el nombre de un repartidor: es obligatorio y no puede superar el
+     * largo de la columna {@code nombre}. La usa el constructor, de modo que
+     * ningún repartidor pueda tener un nombre inválido, sin importar desde
+     * dónde se cree. El formulario también la usa para validar antes de guardar.
+     *
+     * @param nombre nombre a validar
+     * @return el nombre sin espacios al inicio ni al final
+     * @throws IllegalArgumentException si el nombre está vacío o es demasiado largo
+     */
+    public static String validarNombre(String nombre) {
+        if (nombre == null || nombre.isBlank()) {
+            throw new IllegalArgumentException("El nombre del repartidor es obligatorio.");
+        }
+        String limpio = nombre.trim();
+        if (limpio.length() > LARGO_MAXIMO_NOMBRE) {
+            throw new IllegalArgumentException("El nombre del repartidor no puede superar los "
+                    + LARGO_MAXIMO_NOMBRE + " caracteres.");
+        }
+        return limpio;
+    }
+
+    /**
+     * Incorpora al repartidor a una ronda: le indica desde qué zona de carga
+     * retira pedidos y en qué controlador registra sus entregas. Lo invoca el
+     * controlador al preparar cada ronda de entregas.
      *
      * @param zonaDeCarga zona de carga compartida
      * @param controlador controlador donde se registran las entregas
@@ -325,7 +352,7 @@ public class Repartidor implements Runnable {
 
         Thread.sleep(ESPERA_MINIMA_MS + random.nextInt(ESPERA_ALEATORIA_MS));
 
-        if (!controlador.registrarEntrega(pedido)) {
+        if (!controlador.confirmarEntrega(pedido)) {
             throw new EntregaException("no fue posible confirmar la entrega");
         }
         zonaDeCarga.confirmarEntrega();

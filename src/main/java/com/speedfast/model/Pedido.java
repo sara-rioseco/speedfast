@@ -15,6 +15,9 @@ import java.util.List;
  */
 public abstract class Pedido implements Despachable, Cancelable, Rastreable {
 
+    /** Largo máximo de la dirección, igual al de la columna {@code direccion} (VARCHAR(100)). */
+    public static final int LARGO_MAXIMO_DIRECCION = 100;
+
     /** Identificador único del pedido. */
     private int idPedido;
 
@@ -43,10 +46,11 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
      * @param direccionEntrega dirección de entrega
      * @param distanciaKm      distancia hasta la entrega, en kilómetros
      * @param tipo             tipo de servicio asociado
+     * @throws IllegalArgumentException si la dirección está vacía o es demasiado larga
      */
     public Pedido(int idPedido, String direccionEntrega, float distanciaKm, TipoPedido tipo) {
         this.idPedido = idPedido;
-        this.direccionEntrega = direccionEntrega;
+        this.direccionEntrega = validarDireccion(direccionEntrega);
         this.distanciaKm = distanciaKm;
         this.tipo = tipo;
         this.estado = EstadoPedido.PENDIENTE;
@@ -73,9 +77,35 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
         return direccionEntrega;
     }
 
-    /** @param direccionEntrega nueva dirección de entrega */
+    /**
+     * @param direccionEntrega nueva dirección de entrega
+     * @throws IllegalArgumentException si la dirección está vacía o es demasiado larga
+     */
     public void setDireccionEntrega(String direccionEntrega) {
-        this.direccionEntrega = direccionEntrega;
+        this.direccionEntrega = validarDireccion(direccionEntrega);
+    }
+
+    /**
+     * Valida una dirección de entrega: es obligatoria y no puede superar el
+     * largo de la columna {@code direccion}. La usan el constructor y
+     * {@link #setDireccionEntrega(String)}, de modo que ningún pedido pueda
+     * tener una dirección inválida, sin importar desde dónde se cree. El
+     * formulario también la usa para validar antes de guardar.
+     *
+     * @param direccion dirección a validar
+     * @return la dirección sin espacios al inicio ni al final
+     * @throws IllegalArgumentException si la dirección está vacía o es demasiado larga
+     */
+    public static String validarDireccion(String direccion) {
+        if (direccion == null || direccion.isBlank()) {
+            throw new IllegalArgumentException("La dirección de entrega es obligatoria.");
+        }
+        String limpia = direccion.trim();
+        if (limpia.length() > LARGO_MAXIMO_DIRECCION) {
+            throw new IllegalArgumentException("La dirección de entrega no puede superar los "
+                    + LARGO_MAXIMO_DIRECCION + " caracteres.");
+        }
+        return limpia;
     }
 
     /** @return la distancia hasta la entrega, en kilómetros */
@@ -234,9 +264,10 @@ public abstract class Pedido implements Despachable, Cancelable, Rastreable {
     }
 
     /**
-     * Devuelve a pendiente un pedido cuya entrega quedó interrumpida (por
-     * ejemplo, porque la aplicación se cerró mientras iba en reparto), de modo
-     * que pueda volver a la zona de carga y otro repartidor lo retire.
+     * Devuelve a pendiente un pedido cuya entrega quedó sin efecto (por
+     * ejemplo, porque se eliminó la entrega con la que salió a reparto), de
+     * modo que vuelva a la zona de carga en la próxima ronda y otro repartidor
+     * lo retire.
      *
      * @return {@code true} si el pedido estaba en reparto y volvió a pendiente
      */
